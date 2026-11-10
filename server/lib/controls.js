@@ -97,6 +97,8 @@ var huesync = null;
 var servicesModule = null;
 /** @type {typeof import('./screensavers')} */
 var screensavers = null;
+/** @type {typeof import('./inputbar')} */
+var inputBar = null;
 /** @type {typeof import('./apps')} */
 var appsModule = null;
 /** @type {typeof import('./lgsettings')} */
@@ -1078,15 +1080,21 @@ function doControl(action, value, cb) {
        * written into the same file, so setting one without the other would
        * quietly reset it.
        */
-      var ssMode = value, ssLevel = screensavers.screensaverLevel();
+      var ssMode = value, ssLevel = screensavers.screensaverBrightness(), ssChoice;
       if (value && typeof value === 'object') {
         ssMode = value.mode;
+        // brightness: a percentage. level: "dim" or "bright", as before it.
         if (value.level) ssLevel = value.level;
+        if (value.brightness !== undefined) ssLevel = value.brightness;
+        if (typeof value.choice === 'string') ssChoice = value.choice;
       }
-      return screensavers.setScreensaver(String(ssMode || '').trim(), ssLevel, function (r) {
+      ssMode = String(ssMode || '').trim();
+      // The option in use stays with a change of level, as the level does with a change of option.
+      if (ssChoice === undefined && ssMode === screensavers.screensaverMode()) ssChoice = screensavers.screensaverChoice();
+      return screensavers.setScreensaver(ssMode, ssLevel, function (r) {
         telemetry.clearCache();
         cb(r);
-      });
+      }, ssChoice);
 
     case 'screensaver':
       return screensavers.trigger(function (r) {
@@ -1268,6 +1276,15 @@ function doControl(action, value, cb) {
         cb({ ok: true, minutes: offMin });
       });
 
+    // The input bar where it is experimental; off sets its keys back to LG's.
+    case 'setInputBarAllowed':
+      if (!inputBar) return cb({ ok: false, error: 'input bar unavailable' });
+      var allowBar = (value === true || value === 'on' || value === 'true');
+      return inputBar.setAllowed(allowBar, function (err) {
+        if (err) return cb({ ok: false, error: 'could not save setting: ' + err.message });
+        cb(getUpdateSummary());
+      });
+
     case 'setWebos10ScreensaversAllowed':
       var allowSs = (value === true || value === 'on' || value === 'true');
       if (!writeSettingsFn) return cb({ ok: false, error: 'no writeSettings handler configured' });
@@ -1439,6 +1456,7 @@ function init(opts) {
   if (opts.huesync) huesync = opts.huesync;
   if (opts.services) servicesModule = opts.services;
   if (opts.screensavers) screensavers = opts.screensavers;
+  if (opts.inputBar) inputBar = opts.inputBar;
   if (opts.apps) appsModule = opts.apps;
   if (opts.lgSettings) lgSettings = opts.lgSettings;
   if (opts.updater) updater = opts.updater;

@@ -178,6 +178,24 @@ pipeline returned output3 to LG's route; its idle orphaned module was removed
 when the next player acquired HD output. A subsequent native PCM Matroska clip
 reached the receiver as PCM at 48 kHz with no DTS module active.
 
+App switches on 8 November 2026, in HD mode with Plex, Disney+, YouTube,
+Netflix and live TV. When Plex resumed a title after another app had played,
+the forwarder's first frame arrived while the pipeline still held `fakevdec` in
+place of `lxvideodec` and playsink had no audio chain; the `audiosink` appeared
+100-300 ms later. Refusing then made Plex transcode to PCM in place of DTS. The
+same wait was needed, at 100 ms, on one ordinary start. When another app played
+while Plex was in the background, LG connected that app's source to output3
+and the module stood down, ending the lease. uMS paused Plex's pipeline and
+played the same one again when Plex returned, so its forwarder, which had
+failed for good once its lease ended, had to take the route again: doing that
+on the same sink, left in bypass, brought DTS-HD back. Plex twice stuck on a
+grey screen when reopened with no media pipeline at all; its cause was not
+established. Disney+ DD+, YouTube
+multichannel PCM, Netflix and live TV each took output3 from a held DTS route
+and played normally. The kernel log (`/var/log/legacy-log`) records each
+`audio_hal_earc_set_*` call with the calling thread, which separates LG's eARC
+set-up from the module's.
+
 ## C9 HAWK2 audio EDID (webOS 4.10.2)
 
 OLED65C9PUA, firmware 05.50.00, reported in #1078 on 28 October 2026.
@@ -1498,7 +1516,52 @@ note here that a C2 did not listen on 9998 was mistaken. LG's browser engine,
 switch: without a firewall, only leaving out the port switch, which needs
 WebAppMgr restarted, or turning Developer Mode off closes it.
 
-## The compositor's key filters (webOS 4.4.3, B8; webOS 9.2.2, C2)
+A 50NANO753PR on firmware 03.53.45 (webOS 6.5.3, kernel 4.4.84) has no
+`ip_tables` either, and no `tcpdump` or `strace`.
+
+## App jails and DNS (50NANO753PR, webOS 6.5.3)
+
+Native apps run in a jail, `/var/palm/jail/<id>`, made by `/usr/bin/jailer`
+from `/etc/jail_*.conf`. YouTube (`youtube.leanback.v4`, Cobalt, `"type":
+"native"`, `"privilegedJail": true`) runs in one. `/var/palm/jail` also held
+jails for Netflix, Amazon, the web browser, Jellyfin's service, LG's voice and
+ThinQ adapters, and `wap`.
+
+- **A chroot, not a container.** YouTube's process has the jail as its root
+  (`/proc/<pid>/root`) and the same mount, network and UTS namespaces as PID 1,
+  so a mount made on the TV under the jail is what the app sees, and it reaches
+  connmand's relay at `127.0.0.1:53`.
+- **resolv.conf and hosts are copies.** The jail's `etc/resolv.conf` and
+  `etc/hosts` are plain files. `jail_native_builtin.conf` names
+  `copy /etc/hosts`; nothing there names `resolv.conf`, yet it is copied too.
+  Both are written each time the jailer resets the jail, which touches
+  `jail-reset.6.5.3-47` in it: at every launch, including the preload
+  manager's own relaunches in the background after the app was killed. The
+  jail's other directories persist between launches.
+- **The hosts copy can predate the ad blocker.** After a reboot, YouTube's jail
+  was reset at 21:47:58 and Glasshouse mounted its table over `/etc/hosts` at
+  21:48:17, so YouTube had LG's 237-byte file until its next launch, which
+  copied the 5617-byte table.
+- **Cobalt uses the jail's resolver.** Its binary calls `getaddrinfo` (glibc
+  2.28 in the jail) and holds no DNS-over-HTTPS or fixed resolver names. With
+  the jail's `resolv.conf` naming a logging relay on `127.0.0.53`, YouTube
+  sent it `www.youtube.com`, `www.gstatic.com`, `i.ytimg.com`,
+  `redirector.googlevideo.com` and others, and played normally.
+- **Only a write after the copy holds.** A writable bind mount over the jail's
+  `resolv.conf` stays mounted, but the next launch copies the TV's file through
+  it. A read-only one makes the copy fail: YouTube did not start, its
+  `jail-reset` marker was gone, and a launch sent after the mount came off was
+  not logged by sam; the next one, 2 minutes 47 seconds after the failed
+  launch, started it normally. Writing the file again right after the copy worked: the copy
+  came 1.5 s before YouTube's first lookup. Rewriting it while YouTube ran
+  brought no lookups to the new server in 70 s, so a running app is not
+  counted on to read it again.
+- **An app can open before the server.** In one boot, Glasshouse's boot hook
+  ran 34 s in, YouTube was opened from Home at 36 s (its jail reset then), and
+  the server was listening at 48 s. That YouTube kept the TV's DNS until it
+  left the screen 7 minutes later and a new YouTube process started.
+- **Web apps cannot be told apart.** They all run in WebAppMgr, one process
+  outside any jail. (webOS 4.4.3, B8; webOS 9.2.2, C2)
 
 The compositor (surface-manager) runs every remote key through a chain of
 JavaScript filters named in the configd key
@@ -1546,6 +1609,9 @@ app in front. Remote Keys puts its own filter first.
   assistant's app on a press, while the microphone button
   (`Key_webOS_Voice`, RF 436) goes to voice control. The same file names about
   20 regional streaming buttons (Hotstar, Stan, Wavve, U-Next, TVer and others).
+  A 55QNED70A (webOS 10.3.1, Brazil) names the same set, among them
+  `Key_webOS_Globoplay`, which opens `globoplaywebos` and is on Brazilian
+  remotes.
   On a CX (webOS 5.5), the microphone button set to an app through the filter
   opened it on a press and on a hold alike, and set back to LG's own it started
   voice control again (#1034).
@@ -2975,3 +3041,113 @@ soundbar (`KHAL_AUDIO_SNDOUT_eARC_OutputType ... codec_type 1`). After
 type MAT`), passed through over eARC (`codec_type 7`), and reported Atmos
 available. Nothing requires the unit; restarting it with HDMI 1 in front
 re-wrote that input's EDID and hot-plugged it, and the app stayed in front.
+
+## No remote key filters on webOS 3 (60UJ6519-ZA, webOS 3.9.3)
+
+- Neither `/usr/lib/qml/KeyFilters`, `/usr/lib/qt5/qml/KeyFilters` nor any
+  `KeyFilters` folder under `/usr/lib/qml` exists, and configd has no
+  `com.webos.surfacemanager.keyFilters` (`missingConfigs`, "No Entry Found").
+  Every Home press opens LG's ribbon (#1222).
+- The remote's Home is `IR_KEY_HOME`, 781 in `/usr/share/X11/xkb/keycodes/lg`
+  (773 as an evdev code), which LG maps to `Qt::Key_Super_L`, the key evdev's
+  125 (`KEY_LEFTMETA`) also gives. The same table is on webOS 4 and 9.
+- On a B8 (webOS 4.4.3), 773 written to the remote's input device
+  (`LGE RCU`, `event1`) reaches a reader of that device but opens nothing in
+  the compositor; 125 written there opens LG's ribbon.
+
+## A web app as the screen saver (OLED65C5PUA, webOS 10.3.1)
+
+Measured on 5 November 2026, with LG's screen saver app's folder bind-mounted
+over by Glasshouse's staged copy, its `appinfo.json` changed from `type: qml`
+to `type: web` and `main` to `web/index.html`, `defaultWindowType:
+screenSaver` kept.
+
+- **sam takes the type change.** The block and release of the one app that
+  moves it between Flutter and QML (`blockSystemApp`, `releaseBlockSystemApp`)
+  also moved it to `web`, without restarting sam.
+- **The web app manager runs it as the screen saver.** Launched through
+  `com.webos.applicationManager/launch`, the page drew full screen over Home,
+  `getPowerState` answered `Screen Saver`, and the app in front stayed
+  `com.webos.app.home`. A 1.3 MB single-file page with WebGL and WebAssembly ran
+  there.
+- **A key ends it, as it ends LG's.** One remote key (Down, sent through the
+  network input service) took the TV back to `Active` and Home; the page did
+  nothing to end itself.
+- **sam keeps the main file as well as the type.** Moving between two web
+  pages of different names (`web/index.html` to `web/probe.html`) left sam
+  opening the first, as `getAppInfo` still named it, until the block and
+  release; the type alone had not changed.
+- **A page in it can use the TV's services.** `PalmServiceBridge` is there,
+  and a page could read `com.webos.service.settings/getSystemSettings`,
+  `com.webos.applicationManager/running`, `getForegroundAppInfo` and
+  `listApps`, and `com.webos.service.tvpower/power/getPowerState`, from
+  `file://` and from a page loaded over `http://` alike. With
+  `requiredPermissions` staged as `[]` instead of LG's `["all"]`, and sam
+  having read it again, every one was still answered: the access comes with
+  the app being LG's own, not with its manifest.
+- **A frame does not shut it out.** A page loaded over `http://` in an
+  `<iframe sandbox="allow-scripts">` of a local page had `PalmServiceBridge`
+  too, and `running`, `listApps` and `getPowerState` were answered. The
+  bridge is put into every frame, so a website cannot be shown in the screen
+  saver without what it runs being able to use the TV's services. A frame
+  without `sandbox` kept the screen saver up as well.
+- **Rereading the app under a showing screen saver breaks tvpower.** A
+  block and release of `com.webos.app.screensaver` while one was on screen
+  killed it (`Screen Saver` to `Active` at once), and a `turnOnScreenSaver`
+  about 3 s later, from the Back, close and request Glasshouse then made,
+  launched the new one, whose window showed for under half a second. tvpower
+  then read `Active` with `processing: "Screen Saver Ready"` and answered
+  every `turnOnScreenSaver` with `Invalid State change Request` and
+  `turnOnScreen` with `power is busy`; nothing short of a reboot cleared it.
+  Reproduced on the first try from Clock to a web one; from a web one to
+  Clock the TV rebooted itself. In "Screen Saver Ready" tvpower waits on its
+  own `applicationManager/launch` of the app. Closing the showing one with
+  Back first, waiting for `Active`, then switching and asking 3 s later
+  worked in both directions, QML to QML and to and from web, every time.
+
+## Overlay web apps and the input bar (webOS 6.5.3, C1)
+
+Measured on an OLED77C1PUB with webOS 6.5.3, building the input bar, with
+HDMI 3 in front.
+
+- A developer web app with `"defaultWindowType": "overlay"` and
+  `"transparent": true` in its `appinfo.json` opens as
+  `_WEBOS_WINDOW_TYPE_OVERLAY` over the input: the picture shows through
+  where the page draws nothing, `getForegroundAppInfo` goes on naming
+  `com.webos.app.hdmi3`, and the remote's keys reach the page
+  (`WaylandKeyboard::OnKeyNotify` in WebAppMgr). LG's own overlays, Settings
+  and `com.webos.app.adhdmi1` to `4` among them, declare the same.
+- Without `"noSplashOnLaunch": true` and `"spinnerOnLaunch": false`, sam shows
+  its grey splash with a spinner over the picture until the page draws.
+- A page that goes on to another with `location.replace` (the
+  `http://localhost` page Glasshouse serves, as Glasshouse Home's app does)
+  was suspended after that load (`handleLoadFinished; m_suspendAtLoad : true`),
+  and its window was mapped 4.1 s later. The app's own page was mapped 0.3 to
+  0.4 s after it loaded, with its first frame: one that drew nothing until its
+  data came waited 1.4 s, one drawing what it had kept from before none.
+- `"keepAlive": true` in `appinfo.json`, and `PalmSystem.keepAlive = true`,
+  did not keep it: `window.close()` still ended it (`WEBAPP_CLOSED`).
+  WebAppMgr has `setKeepAlive`, apparently for LG's own apps only.
+- `PalmSystem.hide()` left the overlay on screen and holding the remote's
+  focus: no `NL_VSC` with `visible:false`, and focus stayed with
+  `overlaySurface`.
+- `applicationManager/launch` with `"preload": "full"` starts the app with no
+  window: `PalmSystem.launchParams` is `{"preload":"full"}` and
+  `document.hidden` true. A later launch reaches it as a relaunch
+  (`APP_RELAUNCH`), and the window was shown 0.35 s after it. WebAppMgr waits
+  for a new frame first (`Not PageFrameSwapped; Pending Show()`): a page with
+  nothing new to draw was shown 2.1 s later.
+- Launching a card window already on screen, as Glasshouse Home is, redraws
+  it, which shows as a flash on each press.
+- In the compositor's key filters, `global.isForegroundApp(id)` is true for
+  the overlay while it is up, and `global.sendKeyToFocusWindow(Qt.Key_Right,
+  pressed, 106)` reaches its page as `keyCode` 39. LG's `appLaunch.js` names
+  the Input key `WebOS.Key_webOS_InputSource` and opens
+  `com.webos.app.quickinputpicker` through `systemUIManager/launch`; the IR
+  remote (`LGE RCU`) sends it as key code 241.
+- From the app's `file://` page, a GET to `http://localhost:8080` reads its
+  answer; Glasshouse's POSTs refuse it on its `Origin` (`null`).
+  `PalmServiceBridge` calls `applicationManager/launch` for
+  `com.webos.app.hdmiN` with the app's default trust level.
+- `applicationManager/running` with `"subscribe": true` answers at once and
+  on every change to the running apps.

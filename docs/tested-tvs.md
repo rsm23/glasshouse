@@ -1,12 +1,12 @@
 # Tested TVs
 
-Confirmed on **69 TVs across 46 series** running **webOS 2.2 through 11** (LG's webOS 26). Any other rooted webOS model should work as well.
+Confirmed on **75 TVs across 51 series** running **webOS 2.2 through 11** (LG's webOS 26). Any other rooted webOS model should work as well.
 
 * **Series & sizes:** Screen sizes and regional variants of a series run the same software, so the summary table groups them into one row per series. Years are LG's model years; many TVs have since been updated to a later webOS.
 * **Version numbers:** Versions here are what the TV reports itself, as the dashboard shows them; see [webOS version numbers](#webos-version-numbers) below for LG's marketing names (webOS 22–26).
 * **Older firmware:** webOS 2 and 3 have fewer of LG's services, so readings and controls that rely on them are automatically omitted there.
 
-=== "By series (46)"
+=== "By series (51)"
 
     | Series        | Year | Panel | webOS seen        | Reports |
     | :------------ | :--- | :---- | :---------------- | :------ |
@@ -31,8 +31,10 @@ Confirmed on **69 TVs across 46 series** running **webOS 2.2 through 11** (LG's 
     | CX            | 2020 | OLED  | 5.5 – 5.6         | 4       |
     | GX            | 2020 | OLED  | 5.6               | 1       |
     | UN73          | 2020 | LCD   | 5.6               | 1       |
-    | C1            | 2021 | OLED  | 6.x               | 2       |
+    | C1            | 2021 | OLED  | 6.3 – 6.5         | 3       |
     | G1            | 2021 | OLED  | 6.5               | 1       |
+    | NANO75        | 2021 | LCD   | 6.5               | 1       |
+    | NANO85        | 2021 | LCD   | 6.5               | 1       |
     | UP80          | 2021 | LCD   | 6.5               | 1       |
     | UP81          | 2021 | LCD   | 6.5               | 1       |
     | B2            | 2022 | OLED  | 10.3              | 1       |
@@ -45,19 +47,22 @@ Confirmed on **69 TVs across 46 series** running **webOS 2.2 through 11** (LG's 
     | C3            | 2023 | OLED  | 10 – 11           | 3       |
     | G3            | 2023 | OLED  | 11                | 1       |
     | UR80          | 2023 | LCD   | 10.3              | 1       |
+    | QNED80        | 2023 | LCD   | 10.3              | 1       |
     | B4            | 2024 | OLED  | 9                 | 1       |
     | C4            | 2024 | OLED  | 9 – 10            | 5       |
     | G4            | 2024 | OLED  | 10                | 2       |
+    | QNED86        | 2024 | LCD   | 10.3              | 1       |
     | UT73          | 2024 | LCD   | —                 | 1       |
     | UT81          | 2024 | LCD   | 10                | 1       |
     | C5            | 2025 | OLED  | 10 – 11.2         | 4       |
     | G5            | 2025 | OLED  | 10 – 11           | 2       |
     | UA73          | 2025 | LCD   | 10.3.1            | 1       |
+    | UA75          | 2025 | LCD   | 10.3              | 1       |
     | C6            | 2026 | OLED  | 11.2              | 1       |
     | NU80          | 2026 | LCD   | 11                | 1       |
     | QNED84        | 2026 | LCD   | 11.0              | 1       |
 
-=== "All reports (69)"
+=== "All reports (75)"
 
     | Model       | webOS        | Firmware | Panel | Notes                                                          |
     | :---------- | :----------- | :------- | :---- | :------------------------------------------------------------- |
@@ -91,8 +96,11 @@ Confirmed on **69 TVs across 46 series** running **webOS 2.2 through 11** (LG's 
     | 43UN73003LC | 5.6.2        | 04.64.00 | LCD   | Glasshouse Home opened from the Home button, and an app from it ([#931](https://github.com/rorygallagher2024/glasshouse/pull/931)) |
     | OLED55C17LB | 6.x          | —        | OLED  | HDMI 2.1 diagnostics and remote battery reporting              |
     | OLED55C1PUB | 6.x (6.3+)   | 03.53.45 | OLED  | SSH install and MQTT bridge confirmed                          |
+    | OLED65C15LA | 6.5.3        | 03.53.45 | OLED  | In-app updates confirmed, 0.130.0 to 0.141.1                   |
     | 50UP81006LR | 6.5.0        | 03.51.16 | LCD   | Installed over telnet; in-app update confirmed                 |
     | 43UP80006LA | 6.5.3        | 03.53.45 | LCD   | MQTT bridge confirmed                                          |
+    | 50NANO753PR | 6.5.3        | 03.53.45 | LCD   | Rooted with slopbro; kernel 4.4.84 has no firewall, so the web app debugger stays open to the network; telnet install confirmed |
+    | 65NANO85APA | 6.5.3        | 03.53.45 | LCD   | SSH install; web and TV dashboards, telemetry, remote navigation, volume/mute and LCD backlight verified |
     | OLED55G19LA | 6.5.3        | 03.53.45 | OLED  | Advertising ID reset accepted without ID change on this firmware |
     | OLED65G29LA | 7.4.0        | 04.40.90 | OLED  | Confirmed working                                              |
     | 55QNED826QB | 7.6.0        | 04.60.90 | LCD   | Installed over SSH; MQTT bridge confirmed                      |
@@ -120,6 +128,9 @@ Confirmed on **69 TVs across 46 series** running **webOS 2.2 through 11** (LG's 
     | 55QNED82AUA | 10.3.1       | 33.31.61 | LCD   | Rooted with slopbro; SSH install; privacy switches, Glasshouse Home confirmed |
     | 86UR8000AUA | 10.3.2       | 33.31.75 | LCD   | Working; no firewall in its kernel, so the web app debugger stays open to the network |
     | OLED65B2PUA | 10.3.2       | 33.31.75 | OLED  | Rooted with Homebrew Channel; SSH install; Glasshouse Home and HDMI confirmed working after reboot |
+    | 55QNED80SRA | 10.3.2       | 33.31.75 | LCD   | Rooted with slopbro; SSH install; Glasshouse Home, privacy switches and app installs confirmed |
+    | 75QNED86T6A | 10.3.2       | 33.31.75 | LCD   | Rooted with slopbro; SSH install; MQTT bridge confirmed; SoC temperature and eMMC wear reported; app install through the dashboard confirmed |
+    | 55UA75006LA | 10.3.2       | 33.31.80 | LCD   | Rooted with slopbro; SSH install; Glasshouse Home and MQTT bridge confirmed; SoC temperature and eMMC wear reported |
     | OLED65G5WUA | 10           | 33.30.69 | OLED  | No screen saver tab; volume stuck at +10 on optical output     |
     | 42LX3Q6LA   | —            | 33.31.68 | OLED  | Flex; model number has no OLED prefix                          |
     | 43UT73006LA | —            | —        | LCD   | Reported working                                               |

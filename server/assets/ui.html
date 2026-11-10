@@ -859,8 +859,25 @@
   <div id="ss-list" class="ss-list"></div>
   <div class="ss-side">
   <div class="ss-level-row" id="ss-level-row" hidden>
-    <div class="ss-level-lbl" data-t="ss.brightness">Brightness</div>
-    <div class="btns" id="ss-level"></div>
+    <div class="ss-level-lbl"><span data-t="ss.brightness">Brightness</span> &middot; <span id="ss-bright-lbl" class="num">&mdash;</span></div>
+    <div class="vol-row ss-bright-row">
+      <div class="vol-wrap full" id="ss-bright-wrap" role="group" aria-label="Brightness" data-t-aria-label="ss.brightness">
+        <div class="vol-fill" id="ss-bright-fill"></div>
+        <input type="range" id="ss-bright-slider" min="5" max="100" step="5" value="65" aria-label="Brightness" data-t-aria-label="ss.brightness">
+      </div>
+    </div>
+  </div>
+
+  <div class="ss-level-row" id="ss-choice-row" hidden>
+    <div class="ss-level-lbl" id="ss-choice-lbl"></div>
+    <!-- A list of its own rather than a select: a select's open list takes no
+         headings worth the name, and some screen savers have hundreds of options. -->
+    <div class="ss-pick" id="ss-pick">
+      <button type="button" class="pill-sel ss-pick-btn" id="ss-choice" aria-haspopup="listbox" aria-expanded="false"
+        aria-labelledby="ss-choice-lbl ss-choice" onclick="ssPickOpen(q('ss-pick-list').hidden)" onkeydown="ssPickKey(event)">&mdash;</button>
+      <div class="ss-pick-list" id="ss-pick-list" role="listbox" aria-labelledby="ss-choice-lbl" tabindex="-1" hidden
+        onkeydown="ssPickKey(event)"></div>
+    </div>
   </div>
 
   <div class="ss-level-row">
@@ -1034,6 +1051,11 @@
       <summary><span data-t="apps.remoteKeys">Remote keys</span> <span class="cur" id="apps-rk-summary"></span></summary>
       <div class="pv-sub" data-t="apps.remoteKeys.desc">What a key on the remote does: as LG has it, nothing, or opening an app or input instead. A change applies straight away and lasts across reboots. A key set here is taken before any app sees it, so an app that uses the key itself, such as YouTube with Guide, no longer gets it. The keys listed are the ones this TV handles; a given remote may not have them all.</div>
       <div id="apps-rk-list"></div>
+      <div id="apps-rk-bar" hidden>
+        <div class="rk-grp" data-t="apps.inputBar">Input bar</div>
+        <div class="pv-sub" data-t="apps.inputBar.desc">The inputs the bar steps through, in Glasshouse Home&rsquo;s order. Hiding one here hides it on Glasshouse Home too.</div>
+        <div class="prot-table" id="apps-rk-bar-list"></div>
+      </div>
     </details>
   </div>
 
@@ -1055,6 +1077,24 @@
       <div class="prot-table" id="apps-services-list">
         <div class="sub" style="padding:16px 0" data-t="apps.loadingServices">Loading background services&hellip;</div>
       </div>
+    </details>
+  </div>
+
+  <div class="apps-grp" id="apps-grp-net">
+    <div class="apps-grp-h" data-t="apps.group.net">Network</div>
+    <div class="pv-sub apps-grp-d" data-t="apps.group.net.desc">How apps reach the internet.</div>
+
+    <details class="pv-d" id="disc-appdns" hidden>
+      <summary><span data-t="apps.dns">DNS app configuration</span> <span class="cur" id="apps-dns-summary"></span></summary>
+      <div class="pv-sub" data-t="apps.dns.desc">An app here can look names up with DNS servers of its own, such as
+        1.1.1.1 or a Pi-hole, while everything else on the TV keeps using the TV's. A change takes effect the
+        next time the app starts. Only apps LG runs in a sandbox of their own are listed, once they have been
+        opened; web apps share one process and cannot have their own.</div>
+      <div class="pv-sub" data-t="apps.dns.doh.desc">Instead of addresses, an app can be given one https:// address for
+        DNS over HTTPS, such as https://dns.nextdns.io/ followed by a NextDNS profile ID. Glasshouse then answers
+        the app's lookups on the TV and sends each on over HTTPS, so the app finds nothing while Glasshouse is not
+        running, as in the first minute after the TV starts.</div>
+      <div class="prot-table" id="apps-dns-list"></div>
     </details>
   </div>
 </section>
@@ -1190,10 +1230,24 @@
     </div>
     <div class="prot-row home-gh-row home-show-row" hidden>
       <div class="prot-main">
-        <div class="prot-title" data-t="home.showWeather">Weather</div>
-        <div class="prot-desc" data-t="home.showWeatherDesc">Next to the clock: the weather Home Assistant sends, once an automation sends it.</div>
+        <div class="prot-title" data-t="home.weather">Weather</div>
+        <div class="prot-desc" data-t="home.weatherDesc">Next to the clock: the weather Home Assistant sends, or the weather for a place you choose, from Open-Meteo.</div>
       </div>
-      <div class="prot-status"><button type="button" class="pill idle" id="home-show-weather" onclick="homeShow('showWeather')">&mdash;</button></div>
+      <div class="prot-status"><select class="pill-sel" id="home-weather-sel" onchange="homeWeatherSource(this.value)" aria-label="Weather" data-t-aria-label="home.weather">
+        <option value="off" data-t="common.off">Off</option>
+        <option value="ha" data-t="home.weather.fromHa">From Home Assistant</option>
+        <option value="internet" data-t="home.weather.fromInternet">From the internet</option>
+      </select></div>
+    </div>
+    <div class="home-weather-place" id="home-weather-place" hidden>
+      <div class="sub" data-t="home.weather.placeDesc">Glasshouse asks Open-Meteo for the weather at this place every 30 minutes while the TV is on. Nothing else is sent.</div>
+      <form class="toast-form" onsubmit="event.preventDefault();homeWeatherSearch();">
+        <input type="search" id="home-weather-q" maxlength="80" autocomplete="off" placeholder="Town or city" data-t-placeholder="home.weather.placeholder">
+        <button type="submit" id="home-weather-go" data-t="home.weather.search">Search</button>
+      </form>
+      <div class="home-weather-results" id="home-weather-results"></div>
+      <div class="sub" id="home-weather-chosen" role="status"></div>
+      <div class="sub home-weather-credit" data-t="home.weather.credits">Weather data by Open-Meteo.com. Location data based on GeoNames.</div>
     </div>
     <div class="prot-row home-gh-row" id="home-picture-row" hidden>
       <div class="prot-main">
@@ -1874,6 +1928,14 @@
             <div class="prot-desc" data-t="server.experimental.screensaver.short">Allows the dashboard's own screen savers on webOS 12 and later, on the Screensaver tab.</div>
           </div>
           <div class="prot-status"><button type="button" class="pill idle" id="exp-screensaver" onclick="toggleExpScreensaver()">&mdash;</button></div>
+        </div>
+        <div class="prot-row" id="exp-inputbar-row" hidden>
+          <div class="prot-main">
+            <div class="prot-title" data-t="server.experimental.inputBar">Input bar</div>
+            <div class="prot-desc" data-t="server.experimental.inputBar.short">Offers the input bar under Remote keys on the Apps tab: a strip of the HDMI inputs over the picture, stepped through with the remote&rsquo;s Input key.</div>
+            <div class="prot-desc" data-t="server.experimental.inputBar.warn">Tried on webOS 4, 6 and 9 only. Switching it off sets any key using it back to LG&rsquo;s and removes its app.</div>
+          </div>
+          <div class="prot-status"><button type="button" class="pill idle" id="exp-inputbar" onclick="toggleExpInputBar()">&mdash;</button></div>
         </div>
       </div>
     </details>

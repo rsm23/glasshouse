@@ -113,12 +113,33 @@ its own, `lib/iptv-worker.js` with its readers in `lib/iptv-parse.js`:
   300. In either mode a job also needs 70 MB free where the snapshots live (`df`). Its output is not known before it runs, so the
   worker counts every byte it writes and stops with `disk` once only 50 MB
   would be left.
-- **A stream that fails** is opened once more. After a `<video>` error the second
-  try adds `gh=<time>` to the URL, as a provider's CDN may be holding a copy of
-  the playlist the TV cannot read, such as one gzipped for a client with no
+- **A stream that fails** is reconnected with a fresh URL, which opens a live
+  channel at the live point. A stall is the picture's `currentTime` not
+  moving for 8 s, whatever events the `<video>` sent, or for 3 s with under
+  half a second buffered past it, as every stall logged on a provider's
+  stream had under a second; a stream that ends reconnects at once. Stuck at a hole with
+  more buffered after it, Home steps over it after 2.5 s instead. Reconnects
+  wait 0.4, 1.5, 3, 5, 8 then 10 s; a channel that has played gets eight in
+  a row, about a minute, as a provider's CDN was seen sending nothing for 30
+  to 50 s at a time, and has them all back after 30 s of playing. One that
+  never played gets two, as a one-stream account can refuse a channel change
+  for a moment, and none for no picture at all. Each reconnect adds
+  `gh=<time>` to the URL, as a provider's CDN may be holding a copy of the
+  playlist the TV cannot read, such as one gzipped for a client with no
   `Accept-Encoding`. Home sends no Referer, as `localhost` gets a 204 from the
   same CDN. The message only mentions a limit on streams for a playlist with an
   account, which `/api/iptv/stream` reports as `account`.
+- **Stream events go to the log**: Home posts each start, stall, error,
+  skipped hole, reconnect, recovery and give-up to `/api/iptv/event`, which
+  writes one `iptv: stream` line each (at most 120 an hour) with the
+  channel's key, never its URL.
+- **MPEG-TS instead of HLS**, a channel at a time: an Xtream panel serves a
+  live channel either way by the URL's extension. Yellow in Home's player
+  posts `/api/iptv/output`, which keeps the channel's key in the playlist's
+  `ts` list in `config.json`; `streamUrl` then turns its `.m3u8` into `.ts`,
+  one long download with no playlist to go stale. Offered (`switchable`) for
+  an Xtream channel unless the panel's `allowed_output_formats` lacks one of
+  the two.
 - **One search at a time**: the lane is taken before the memory check
   answers, so a search asked for meanwhile replaces it rather than starting
   beside it.
@@ -914,6 +935,41 @@ makes the service refuse new ones rather than queue them, and back on with
 `enable`; any other toast in that time is refused too. `remotekeys-toasts-off`
 in `/var/lib/tvweb` marks toasts off, and the server's start switches them back
 on from it.
+
+## The input bar
+
+The [input bar](dashboard/apps.md#input-bar) is a web app of its own,
+`com.tvweb.inputbar` (`assets/inputbar-app/`), whose `appinfo.json` asks for
+an overlay window (`"defaultWindowType": "overlay"`, `"transparent": true`)
+with no splash (`"noSplashOnLaunch": true`, `"spinnerOnLaunch": false`). The
+input stays the app in front and keeps playing under it, while the bar has
+the remote's keys. Its page is the app's own rather than one Glasshouse
+serves: it reads the inputs from `/api/home/catalogue` and what is on from
+`/api/home/now`, loads `assets/devicons.js` for the icons, and switches by
+launching the input's app itself through `PalmServiceBridge`, with the
+`uniqueId` launch parameter Glasshouse Home's tile sends for a device behind a
+receiver, since the server's POSTs refuse its `file://` origin. It keeps the
+last bar it drew in `localStorage` and draws that at once, before the server
+answers, as the window comes up only with the page's first frame.
+
+`lib/remotekeys.js` offers it as a choice where `lib/inputbar.js` allows it,
+and installs its app with `install-app.sh` before saving a key set to it; the
+last key leaving it removes the app, and so does `restore()`. The key filter
+opens it like any app, except that while it is in front
+(`global.isForegroundApp`) a further press goes to it as Right through
+`global.sendKeyToFocusWindow`, with Linux's `KEY_RIGHT` (106) as LG's
+`appLaunch.js` names it: launching a window already on screen redraws it,
+which shows as a flash. A relaunch that does reach the page moves it on too.
+
+`lib/inputbar.js` keeps the app loaded, hidden, while a key opens it and the
+TV is on: launched with `{ "preload": "full" }` 5 s after the server starts,
+5 s after each switch-on, and 0.3 s after it stops running, which it learns
+from `applicationManager/running` with `subscribe`. A preloaded page sees
+`preload` in its launch parameters, draws nothing and sets no timers until
+the press, which reaches it as a relaunch. A refused launch is tried again
+with a growing wait, five times at most until the server starts again. The
+measurements behind each choice are in
+[TV-RESEARCH.md](development/TV-RESEARCH.md#overlay-web-apps-and-the-input-bar-webos-653-c1).
 
 ## Older hardware capabilities (webOS 3.x and LCD models)
 

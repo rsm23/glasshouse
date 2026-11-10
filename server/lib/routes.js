@@ -75,6 +75,8 @@ var appsModule = null;
 var servicesModule = null;
 /** @type {typeof import('./preload')} */
 var preloadModule = null;
+/** @type {typeof import('./appdns')} */
+var appDnsModule = null;
 /** @type {typeof import('./quickaccess')} */
 var quickAccessModule = null;
 /** @type {typeof import('./remotekeys')} */
@@ -93,6 +95,8 @@ var homeLauncherModule = null;
 var iptvModule = null;
 /** @type {typeof import('./screensavers')} */
 var screensaversModule = null;
+/** @type {typeof import('./inputbar')} */
+var inputBarModule = null;
 /** @type {typeof import('./updater')} */
 var updaterModule = null;
 /** @type {typeof import('./logs')} */
@@ -213,7 +217,7 @@ function setupPending() {
  * those decide who may reach this server at all, and a UI that can widen its
  * own exposure defeats the point of setting them. The one exception is host,
  * from the TV itself during setup - see setNetworkAccess. Experimental feature
- * toggles (allowTileHiding, allowExperimentalScreensavers), allowNetworkDebugger and
+ * toggles (allowTileHiding, allowExperimentalScreensavers, allowExperimentalInputBar), allowNetworkDebugger and
  * prometheus.enabled are writable from the Server tab, and iconServer from the
  * MQTT tab: its port answers nothing but the icons the dashboard serves.
  */
@@ -655,6 +659,8 @@ function updateSummary() {
   s.allowNetworkDebugger = !!(config && config.allowNetworkDebugger);
   s.allowTileHiding = !!(appsModule && appsModule.tileHidingAllowed && appsModule.tileHidingAllowed());
   s.allowExperimentalScreensavers = !!(screensaversModule && screensaversModule.allowedAnyway && screensaversModule.allowedAnyway());
+  // Where the Server tab offers the input bar's switch: where it is experimental.
+  s.inputBar = inputBarModule ? inputBarModule.summary() : null;
   // Where the Server tab offers the switch: custom screen savers are experimental there.
   s.isWebos10 = !!(screensaversModule && screensaversModule.experimental && screensaversModule.experimental());
   s.homeLayout = homeScreenModule ? homeScreenModule.experimental() : null;
@@ -1202,6 +1208,9 @@ function handleHomeRoute(req, res, u, pathname) {
     if (pathname === '/api/home/guide') return homeModule.guide(function (g) { reply({ ok: true, guide: g }); });
     if (pathname === '/api/home/now') return homeModule.now(reply);
     if (pathname === '/api/home/weather') return homeModule.weather(reply);
+    if (pathname === '/api/home/weather/places') {
+      return homeModule.weatherPlaces(String(u.query && u.query.q || ''), String(u.query && u.query.lang || ''), reply);
+    }
     if (pathname === '/api/home/picture') {
       return homePictureModule.picture(String(u.query && u.query.kind || ''), Number(u.query && u.query.port), reply,
         String(u.query && u.query.app || ''));
@@ -1365,7 +1374,8 @@ function handleIptvRoute(req, res, u, pathname) {
       var stream = iptvModule.streamUrl(String(qs.pl || ''), String(qs.key || ''));
       if (!stream) return send(res, 404, JSON.stringify({ ok: false, error: 'no-stream' }));
       res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      return res.end(JSON.stringify({ ok: true, url: stream.url, format: stream.format, account: stream.account, maxConnections: stream.maxConnections }));
+      return res.end(JSON.stringify({ ok: true, url: stream.url, format: stream.format, account: stream.account, maxConnections: stream.maxConnections,
+        switchable: stream.switchable }));
     }
   }
   if (req.method === 'POST') {
@@ -1378,6 +1388,8 @@ function handleIptvRoute(req, res, u, pathname) {
       if (pathname === '/api/iptv/selection') return iptvModule.setSelection(body, reply);
       if (pathname === '/api/iptv/lineup') return iptvModule.setLineup(body, reply);
       if (pathname === '/api/iptv/lease') return reply(iptvModule.lease(body && body.on === true, body && body.full === true));
+      if (pathname === '/api/iptv/event') return reply(iptvModule.streamEvent(body));
+      if (pathname === '/api/iptv/output') return reply(iptvModule.setOutput(body));
       if (pathname === '/api/iptv/check') return iptvModule.checkStream(String(body && body.pl || ''), String(body && body.key || ''), reply);
       send(res, 404, JSON.stringify({ ok: false, error: 'not found' }));
     }, pathname === '/api/iptv/lineup' ? 524288 : 8192);
@@ -1925,7 +1937,11 @@ function handleRequest(req, res) {
             if (!remoteKeysModule) return send(res, 200, JSON.stringify(d));
             remoteKeysModule.getRemoteKeys(function (rk) {
               d.remoteKeys = rk && rk.supported ? rk : null;
-              send(res, 200, JSON.stringify(d));
+              if (!appDnsModule) return send(res, 200, JSON.stringify(d));
+              appDnsModule.getAppDns(function (ad) {
+                d.appDns = ad && ad.supported ? ad.apps : null;
+                send(res, 200, JSON.stringify(d));
+              });
             });
           });
         });
@@ -2105,6 +2121,18 @@ function handleRequest(req, res) {
     return readJsonBody(req, res, function (body) {
       if (!preloadModule) return send(res, 503, JSON.stringify({ ok: false, error: 'preload module unavailable' }));
       preloadModule.setPreloadOff(body && body.id, !!(body && body.off), function (r) {
+        send(res, r && r.ok ? 200 : 400, JSON.stringify(r));
+      });
+    });
+  }
+
+  if (pathname === '/api/appdns' && req.method === 'POST') {
+    if (!config.allowControl) {
+      return send(res, 403, JSON.stringify({ ok: false, error: msg('srv.controlsOff', 'controls disabled in config') }));
+    }
+    return readJsonBody(req, res, function (body) {
+      if (!appDnsModule) return send(res, 503, JSON.stringify({ ok: false, error: 'per-app DNS unavailable' }));
+      appDnsModule.setAppDns(body && body.id, body && body.servers, function (r) {
         send(res, r && r.ok ? 200 : 400, JSON.stringify(r));
       });
     });
@@ -2294,6 +2322,7 @@ function init(opts) {
   if (opts.apps) appsModule = opts.apps;
   if (opts.services) servicesModule = opts.services;
   if (opts.preload) preloadModule = opts.preload;
+  if (opts.appDns) appDnsModule = opts.appDns;
   if (opts.quickAccess) quickAccessModule = opts.quickAccess;
   if (opts.remoteKeys) remoteKeysModule = opts.remoteKeys;
   if (opts.homeScreen) homeScreenModule = opts.homeScreen;
@@ -2303,6 +2332,7 @@ function init(opts) {
   if (opts.homeLauncher) homeLauncherModule = opts.homeLauncher;
   if (opts.iptv) iptvModule = opts.iptv;
   if (opts.screensavers) screensaversModule = opts.screensavers;
+  if (opts.inputBar) inputBarModule = opts.inputBar;
   if (opts.updater) updaterModule = opts.updater;
   if (opts.logs) logsModule = opts.logs;
   if (opts.tvApp) tvAppFn = opts.tvApp;

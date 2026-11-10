@@ -2,6 +2,7 @@
  * test/test-children.js - Child starts come from a timer, and urgent ones go ahead of the launch queue, in turn
  */
 
+require('./fake-clock').install();
 var assert = require('assert');
 var util = require('../server/lib/util');
 
@@ -53,4 +54,5 @@ setTimeout(function () {
   }
   console.log('  ✓ urgent starts go first, in the order asked, and keep the gap');
   console.log('ALL test-children.js assertions passed!\n');
+  process.exit(0);
 }, 1200);
