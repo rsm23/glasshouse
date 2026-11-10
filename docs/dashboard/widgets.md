@@ -204,8 +204,9 @@ in a continuous loop; a list that fits stays still. Focus the widget to pause.
 Reduced-motion preferences disable automatic scrolling; the expanded list
 remains available.
 
-Scores refresh once a minute while Home is visible. Large or slow selections
-show loading progress and retry after five seconds. Polling and scrolling stop
+Scores refresh once a minute while Home is visible. Available next matches
+appear while the latest results load. Large or slow selections return available
+rows within one second and check loading progress once a second. Polling and scrolling stop
 while Home is hidden or covered; provider requests already queued may finish.
 An unknown live state is never replaced by historical scores. A failed refresh
 removes affected scores; partial results are labelled **Some scores are

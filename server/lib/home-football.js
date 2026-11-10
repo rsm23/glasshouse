@@ -6,8 +6,8 @@ var BASE = 'https://site.api.espn.com/apis/site/v2/';
 var cache = {}, queue = [], running = 0;
 var FRESH_MS = 60000, RETRY_MS = 30000, CATALOGUE_MS = 6 * 60 * 60000;
 var scheduleTimer = setTimeout, cancelTimer = clearTimeout, readTimers = [];
-// Return progress before Home's 20-second HTTP timeout, even for 64 teams.
-var READ_MS = 15000;
+// Slow teams must not hold back available rows; shared fetches keep filling the cache.
+var READ_MS = 1000;
 
 function leagueId(value) { return typeof value === 'string' && value.length <= 64 && /^[a-z0-9_]+(\.[a-z0-9_]+){1,4}$/.test(value) ? value : ''; }
 function teamId(value) { return typeof value === 'string' && /^\d{1,12}$/.test(value) ? value : ''; }
@@ -172,8 +172,8 @@ function teamSchedule(team, fixtures, cb) {
     return matches.slice(0, 1);
   }, FRESH_MS, cb);
 }
-function collectTeams(teams, fixtures, deadline, cb) {
-  var pending = teams.length, failed = 0, matches = [], nextMatches = [], missing = [], cancels = [], finished = false, updated = now();
+function collectTeams(teams, fixtures, deadline, cb, upcoming) {
+  var pending = teams.length, failed = 0, matches = [], nextMatches = upcoming || [], missing = [], cancels = [], finished = false, updated = now();
   var timer = scheduleTimer(finish, Math.max(1, deadline - now())); readTimers.push(timer);
   function finish() {
     if (finished) return;
@@ -204,6 +204,8 @@ function collectTeams(teams, fixtures, deadline, cb) {
       if (!--pending) finish();
     }));
   });
+  // Show next fixtures immediately while uncached historical results load.
+  if (nextMatches.length && !fixtures && pending) finish();
 }
 function scores(settings, cb) {
   settings = normalise(settings);
@@ -213,16 +215,16 @@ function scores(settings, cb) {
   collectTeams(settings.teams, true, deadline, function (live) {
     if (live.matches.length || live.partial) { live.mode = 'live'; return cb(live); }
     collectTeams(settings.teams, false, deadline, function (results) {
-      results.mode = 'latest'; results.nextMatches = live.nextMatches;
+      results.mode = 'latest';
       results.available = results.available || live.nextMatches.length > 0;
       results.updated = Math.min(results.updated, live.updated); cb(results);
-    });
+    }, live.nextMatches);
   });
 }
 module.exports = { normalise: normalise, leagues: leagues, teams: teams, read: scores, init: function (opts) {
   opts = opts || {}; fetchJson = opts.fetchJson || require('./fetch').getJson; now = opts.now || Date.now;
   readTimers.forEach(function (timer) { cancelTimer(timer); }); readTimers = [];
   scheduleTimer = opts.setTimeout || setTimeout; cancelTimer = opts.clearTimeout || clearTimeout;
-  READ_MS = opts.readMs || 15000;
+  READ_MS = opts.readMs || 1000;
   cache = {}; queue = []; running = 0;
 } };

@@ -235,8 +235,11 @@ The dashboard's TV app and the Homebrew Channel's app are static pages and open 
 
 The optional **Football scores** Home widget reads selected football leagues
 or club/national teams from ESPN once a minute while Home is visible. League
-and team reads return loading progress within 15 seconds if provider
-requests are still pending; received live games remain visible while loading.
+and team reads return loading progress within one second if provider
+requests are still pending; received matches remain visible while loading.
+Loading reads retry once a second and share the in-memory requests; the
+provider queue still runs at most two requests at once. Next fixtures appear
+without waiting for the latest-result lookup.
 Selected teams follow all competitions and show their latest dated results when none
 are live. The same team fixture reads also supply each team's next scheduled
 match and its date, with a kickoff time only when confirmed by ESPN.

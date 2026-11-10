@@ -683,7 +683,7 @@ async function visitHomeFootball(browser, base, problems) {
   let layout = { rows: ['app'], order: { app: [], dev: [], ch: [] }, hidden: { app: [], dev: [], ch: [] }, channels: [],
     showClock: true, showLastOn: false, picture: false, livePreview: false, hintSeen: true, searchHintSeen: true,
     widgets: require('../server/lib/home-widgets').normalise(null) };
-  let version = 1, scoreReads = 0, available = true, count = 9, covered = false, scoreChange = 0, mode = 'live', missingTeams = [], nextMatches = [];
+  let version = 1, scoreReads = 0, available = true, count = 9, covered = false, scoreChange = 0, mode = 'live', missingTeams = [], nextMatches = [], loading = false;
   const matches = () => Array.from({ length: count }, (_, i) => ({ id: String(i + 1), league: 'Ligue 1', status: "42'", date: mode === 'latest' ? '2026-11-07T20:00:00.000Z' : '',
     home: { id: '160', name: 'Paris Saint-Germain', score: i + scoreChange }, away: { id: '166', name: 'Lille', score: 0 } }));
   await page.route('**/api/home**', route => {
@@ -701,7 +701,7 @@ async function visitHomeFootball(browser, base, problems) {
       return reply({ ok: true, teams: league === 'fifa.friendly' ? [{ id: '478', name: 'France' }] : league === 'fifa.friendly.w'
         ? [{ id: '2752', name: 'France' }] : [{ id: '160', name: 'Paris Saint-Germain' }, { id: '166', name: 'Lille' }] });
     }
-    if (pathname.endsWith('/widgets/football')) { scoreReads++; return reply({ ok: true, available, partial: false, mode, missingTeams, nextMatches: available ? nextMatches : [], updated: Date.now(), matches: available ? matches() : [] }); }
+    if (pathname.endsWith('/widgets/football')) { scoreReads++; return reply({ ok: true, available, loading, partial: false, mode, missingTeams, nextMatches: available ? nextMatches : [], updated: Date.now(), matches: available ? matches() : [] }); }
     return reply({ ok: true, covered, build: 'football', layoutVersion: String(version) });
   });
   try {
@@ -806,10 +806,18 @@ async function visitHomeFootball(browser, base, problems) {
     await page.locator('#widget-football').click();
     await page.locator('#widget--panel').getByText('Next match', { exact: true }).waitFor();
     await page.keyboard.press('Escape');
-    count = 0; missingTeams = []; nextFixture.timeValid = false; await readScores();
+    count = 0; missingTeams = []; nextFixture.timeValid = false; loading = true; await readScores();
     const dateOnly = await page.evaluate(date => new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(date)), nextFixture.date);
     if (await nextRow.locator('.fw-meta').last().innerText() !== dateOnly + ' · Next Cup') problems.push('Football: an unconfirmed kickoff time appeared');
     if (await page.locator('#widget-football .fw-scrolling').count()) problems.push('Football: a single next fixture did not fit the compact widget');
+    const beforeProgress = scoreReads;
+    const progressReply = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/widgets/football');
+    loading = false;
+    await page.clock.fastForward(1000); await progressReply;
+    if (scoreReads !== beforeProgress + 1) problems.push('Football: loading progress did not refresh after one second');
+    await page.locator('#widget-football .widget-status').getByText('Latest results · ESPN', { exact: true }).waitFor();
+    await page.clock.fastForward(1000);
+    if (scoreReads !== beforeProgress + 1) problems.push('Football: completed loads kept polling at the loading rate');
     nextMatches = [];
     missingTeams = []; mode = 'live';
     available = false; await readScores();

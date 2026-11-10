@@ -38,9 +38,12 @@ read deadlines with detached waiters, and all 64 selected teams.
 Next-fixture checks cover chronological selection, shared opponents, missing
 dates, unconfirmed kickoff times, excluded statuses, expired cached fixtures,
 and keeping upcoming fixtures when completed results fail.
-League-only reads also return loading progress at the 15-second deadline,
+League-only reads also return loading progress at the one-second deadline,
 retain received live games, detach expired readers without affecting other
 readers or the shared cache, and ignore late replies after responding.
+First-load checks return next fixtures immediately while historical results
+fill the cache, keep replies immutable, reuse completed requests on retry,
+and return available rows within one second when another team is slow.
 The football browser check shares the Home widget group and exercises league
 and team selection, persistence, team-filter clearing, phone overflow in both
 themes, scrolling only on overflow, focus pause, expansion, empty/error states
@@ -50,6 +53,8 @@ selection. Latest-result checks cover dates, no-result entries, the expanded
 view and continued overflow scrolling.
 Next-match rows cover the compact and expanded views, local dates and kickoff
 times, omitted unconfirmed times, and displaying fixtures without results.
+Loading fixtures remain visible while polling once a second; completed loads
+return to the normal refresh interval.
 The ES5 check includes `assets/home-football-view.js` alongside the other Home
 widget scripts.
 

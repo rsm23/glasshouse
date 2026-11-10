@@ -65,7 +65,7 @@ var leagueReplies = 0;
 football.read(chosen, function (reply) { result = reply; leagueReplies++; });
 football.read(chosen, function (reply) { other = reply; });
 assert.strictEqual(timers.length, 2, 'each league reader has its own response deadline');
-assert.strictEqual(timers[0].ms, 15000);
+assert.strictEqual(timers[0].ms, 1000);
 assert.strictEqual(jobs.length, 2, 'league readers share the bounded provider queue');
 timers[0].callback();
 assert.strictEqual(result.loading, true, 'slow league reads return progress before Home times out');
@@ -158,7 +158,7 @@ assert.strictEqual(jobs.length, 1, 'an unknown live state is not replaced by his
 
 init();
 football.read(chosen, function (reply) { result = reply; });
-assert.strictEqual(timers[0].ms, 15000);
+assert.strictEqual(timers[0].ms, 1000);
 timers[0].callback();
 assert.strictEqual(result.loading, true, 'large or slow selections return progress before the HTTP timeout');
 jobs[0].reply(null, { events: [] });
@@ -188,6 +188,7 @@ jobs[0].reply(null, { events: [later, next, scheduled('303', '', ''), scheduled(
   scheduled('305', '2026-11-09T20:00Z', 'STATUS_POSTPONED'), scheduled('306', '2026-11-09T20:00Z', 'STATUS_CANCELED'),
   scheduled('307', '2026-11-09T20:00Z', 'STATUS_SUSPENDED')] });
 jobs[1].reply(null, { events: [recent] });
+football.read(chosen, function (reply) { result = reply; });
 assert.strictEqual(result.mode, 'latest');
 assert.strictEqual(result.matches[0].id, '201', 'next fixtures do not replace the latest results');
 assert.strictEqual(result.nextMatches.length, 1);
@@ -211,6 +212,7 @@ init(); chosen = favourites();
 var unconfirmed = scheduled('310', '2026-11-11T00:00Z'); unconfirmed.timeValid = false;
 football.read(chosen, function (reply) { result = reply; });
 jobs[0].reply(null, { events: [unconfirmed] }); jobs[1].reply(new Error('offline'));
+football.read(chosen, function (reply) { result = reply; });
 assert.strictEqual(result.available, true, 'next fixtures stay visible if the latest-result lookup fails');
 assert.strictEqual(result.partial, true);
 assert.strictEqual(result.nextMatches[0].timeValid, false, 'unconfirmed kickoff times are not displayed');
@@ -218,6 +220,7 @@ assert.strictEqual(result.nextMatches[0].timeValid, false, 'unconfirmed kickoff 
 init();
 football.read(chosen, function (reply) { result = reply; });
 jobs[0].reply(null, { events: [next] }); jobs[1].reply(null, { events: [] });
+football.read(chosen, function (reply) { result = reply; });
 assert.strictEqual(result.matches.length, 0);
 assert.strictEqual(result.nextMatches.length, 1, 'teams without completed results still have a next fixture');
 
@@ -228,6 +231,41 @@ jobs[0].reply(null, { events: [starting] }); jobs[1].reply(null, { events: [] })
 time += 2000;
 football.read(chosen, function (reply) { result = reply; });
 assert.strictEqual(result.nextMatches.length, 0, 'cached fixtures stop being upcoming after kickoff');
+
+init(); chosen = favourites(); result = null;
+var firstReplyAt, firstRows, replyCount = 0, loadStarted = time;
+football.read(chosen, function (reply) { result = reply; firstReplyAt = time - loadStarted; replyCount++; });
+time += 400;
+jobs[0].reply(null, { events: [next] });
+assert.ok(result, 'the first next-match row is returned as soon as fixtures arrive, without waiting for results');
+assert.strictEqual(firstReplyAt, 400);
+assert.strictEqual(result.loading, true);
+assert.strictEqual(result.available, true);
+assert.strictEqual(result.nextMatches[0].id, '301');
+assert.strictEqual(result.matches.length, 0);
+firstRows = JSON.stringify(result);
+assert.strictEqual(jobs.length, 2, 'historical results start loading in the shared cache');
+time += 400;
+jobs[1].reply(null, { events: [recent] });
+assert.strictEqual(replyCount, 1, 'background results cannot send a second HTTP reply');
+assert.strictEqual(JSON.stringify(result), firstRows, 'background results cannot mutate the first response');
+football.read(chosen, function (reply) { result = reply; });
+assert.strictEqual(result.matches[0].id, recent.id);
+assert.strictEqual(result.loading, false);
+assert.strictEqual(jobs.length, 2, 'the loading retry reuses fixture and result requests');
+
+init(); result = null; chosen.teams.push({ id: '10', name: 'Home FC' });
+football.read(chosen, function (reply) { result = reply; });
+jobs[0].reply(null, { events: [next] });
+assert.strictEqual(result, null);
+assert.ok(timers[0].ms <= 1000, 'a slow team holds back available rows for at most one second');
+timers[0].callback();
+assert.strictEqual(result.nextMatches.length, 1);
+assert.strictEqual(result.loading, true);
+assert.strictEqual(jobs.length, 2, 'unknown live state still prevents historical lookups');
+firstRows = JSON.stringify(result);
+jobs[1].reply(null, { events: [next] });
+assert.strictEqual(JSON.stringify(result), firstRows, 'late fixtures cannot mutate an earlier response');
 
 init();
 football.teams('../../bad', function (reply) { result = reply; });

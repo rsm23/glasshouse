@@ -33,7 +33,7 @@
       delete requests[source];
       sources[source] = data && data.ok !== false ? data : source !== 'tv' ? { available: false, matches: [] } : null;
       paintData();
-      var wait = source === 'football' ? data && data.loading ? 5000 : 60000 : source === 'tv' ? 60000 : data && data.available && !data.stale ? 15 * 60000 : 5 * 60000;
+      var wait = source === 'football' ? data && data.loading ? 1000 : 60000 : source === 'tv' ? 60000 : data && data.available && !data.stale ? 15 * 60000 : 5 * 60000;
       timers[source] = setTimeout(function () { read(source); }, wait);
     });
   }
