@@ -1,4 +1,6 @@
 {
+ "home.football.nextMatch": {"from": "Next match", "text": "Következő mérkőzés"},
+ "home.football.nextHelp": {"from": "Selected teams also show their next match, with its date and kickoff time when available.", "text": "A kiválasztott csapatok következő mérkőzése is megjelenik a dátummal és a kezdési időponttal, ha elérhető."},
  "adv.alwaysReady": {"text": "Always Ready", "from": "Always Ready"},
  "adv.alwaysReady.desc": {"text": "A következő kikapcsolástól kezdve a TV a távirányítóval történő kikapcsoláskor elsötétülés helyett az LG Always Ready képernyőjét jeleníti meg, például órával vagy műalkotással. Egy LG C2 ilyenkor kb. 30 W-ot fogyaszt, közel annyit, mint bekapcsolva. Első alkalommal a TV jóváhagyást kér a távirányító OK gombjával. Az óraképernyőről a Kezdőképernyő gombbal kapcsolható vissza a TV; a bekapcsológomb teljesen kikapcsolja.", "from": "Switched off with the remote, the TV shows LG's Always Ready screen, such as a clock or artwork, instead of going dark, from the next time it is switched off. Uses about 30 W on an LG C2, close to what it uses when on. The first time, the TV asks for OK on the remote. Home turns the TV back on from the clock; the power button switches it fully off."},
  "adv.ambient": {"text": "Környezeti világítás", "from": "Ambient light"},

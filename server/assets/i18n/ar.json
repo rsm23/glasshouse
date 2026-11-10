@@ -1,4 +1,6 @@
 {
+ "home.football.nextMatch": {"from": "Next match", "text": "المباراة القادمة"},
+ "home.football.nextHelp": {"from": "Selected teams also show their next match, with its date and kickoff time when available.", "text": "تعرض الفرق المحددة أيضًا مباراتها القادمة مع التاريخ ووقت انطلاق المباراة عند توفره."},
  "adv.alwaysReady": {"text": "جاهز دائماً (Always Ready)", "from": "Always Ready"},
  "adv.alwaysReady.desc": {"text": "عند إيقاف التشغيل بالريموت، يعرض التلفاز شاشة «جاهز دائماً» من LG (مثل الساعة أو اللوحات الفنية) بدلاً من الشاشة السوداء بدءاً من المرة القادمة. يستهلك حوالي 30 واط على شاشة LG C2، وهو قريب من استهلاكه أثناء التشغيل. في المرة الأولى سيطلب التلفاز الضغط على OK في الريموت. زر الصفحة الرئيسية يعيد تشغيل التلفاز من شاشة الساعة، بينما زر الطاقة يوقفه بالكامل.", "from": "Switched off with the remote, the TV shows LG's Always Ready screen, such as a clock or artwork, instead of going dark, from the next time it is switched off. Uses about 30 W on an LG C2, close to what it uses when on. The first time, the TV asks for OK on the remote. Home turns the TV back on from the clock; the power button switches it fully off."},
  "adv.ambient": {"text": "الإضاءة المحيطة", "from": "Ambient light"},

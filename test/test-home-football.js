@@ -176,6 +176,59 @@ assert.strictEqual(result.loading, false);
 assert.strictEqual(result.missingTeams.length, 64, 'every selected team gets a result or an explicit no-result entry');
 assert.strictEqual(jobs.length, 128);
 
+function scheduled(id, date, status) {
+  var item = event(id, 'pre', status || 'STATUS_SCHEDULED', '0');
+  item.date = date; item.timeValid = true; item.league = { name: 'Next Cup' };
+  return item;
+}
+var next = scheduled('301', '2026-11-10T20:00Z'), later = scheduled('302', '2026-12-01T20:00Z');
+init(); chosen = favourites();
+football.read(chosen, function (reply) { result = reply; });
+jobs[0].reply(null, { events: [later, next, scheduled('303', '', ''), scheduled('304', '2026-10-01T20:00Z'),
+  scheduled('305', '2026-11-09T20:00Z', 'STATUS_POSTPONED'), scheduled('306', '2026-11-09T20:00Z', 'STATUS_CANCELED'),
+  scheduled('307', '2026-11-09T20:00Z', 'STATUS_SUSPENDED')] });
+jobs[1].reply(null, { events: [recent] });
+assert.strictEqual(result.mode, 'latest');
+assert.strictEqual(result.matches[0].id, '201', 'next fixtures do not replace the latest results');
+assert.strictEqual(result.nextMatches.length, 1);
+assert.strictEqual(result.nextMatches[0].id, '301', 'the next fixture is chosen chronologically across competitions');
+assert.strictEqual(result.nextMatches[0].date, '2026-11-10T20:00:00.000Z');
+assert.strictEqual(result.nextMatches[0].timeValid, true);
+assert.strictEqual(result.nextMatches[0].league, 'Next Cup');
+assert.strictEqual(result.nextMatches[0].home.score, null, 'an upcoming fixture must not show a fake zero score');
+assert.strictEqual(result.nextMatches[0].away.score, null);
+assert.strictEqual(jobs.length, 2, 'upcoming fixtures reuse the existing team schedule request');
+
+init(); chosen.teams.push({ id: '10', name: 'Home FC' });
+football.read(chosen, function (reply) { result = reply; });
+jobs[0].reply(null, { events: [live, later, next] }); jobs[1].reply(null, { events: [live, next] });
+assert.strictEqual(result.mode, 'live');
+assert.strictEqual(result.matches.length, 1);
+assert.strictEqual(result.nextMatches.length, 1, 'selected opponents share a single upcoming row');
+assert.strictEqual(jobs.length, 2, 'live fixtures still skip historical lookups');
+
+init(); chosen = favourites();
+var unconfirmed = scheduled('310', '2026-11-11T00:00Z'); unconfirmed.timeValid = false;
+football.read(chosen, function (reply) { result = reply; });
+jobs[0].reply(null, { events: [unconfirmed] }); jobs[1].reply(new Error('offline'));
+assert.strictEqual(result.available, true, 'next fixtures stay visible if the latest-result lookup fails');
+assert.strictEqual(result.partial, true);
+assert.strictEqual(result.nextMatches[0].timeValid, false, 'unconfirmed kickoff times are not displayed');
+
+init();
+football.read(chosen, function (reply) { result = reply; });
+jobs[0].reply(null, { events: [next] }); jobs[1].reply(null, { events: [] });
+assert.strictEqual(result.matches.length, 0);
+assert.strictEqual(result.nextMatches.length, 1, 'teams without completed results still have a next fixture');
+
+init();
+var starting = scheduled('311', new Date(time + 1000).toISOString());
+football.read(chosen, function (reply) { result = reply; });
+jobs[0].reply(null, { events: [starting] }); jobs[1].reply(null, { events: [] });
+time += 2000;
+football.read(chosen, function (reply) { result = reply; });
+assert.strictEqual(result.nextMatches.length, 0, 'cached fixtures stop being upcoming after kickoff');
+
 init();
 football.teams('../../bad', function (reply) { result = reply; });
 assert.strictEqual(result.ok, false);

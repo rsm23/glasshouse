@@ -1,4 +1,6 @@
 {
+ "home.football.nextMatch": {"from": "Next match", "text": "Prossima partita"},
+ "home.football.nextHelp": {"from": "Selected teams also show their next match, with its date and kickoff time when available.", "text": "Le squadre selezionate mostrano anche la prossima partita, con la data e l’orario di inizio quando disponibili."},
  "adv.alwaysReady": {"text": "Always Ready", "from": "Always Ready"},
  "adv.alwaysReady.desc": {"text": "Spenta con il telecomando, la TV mostra la schermata Always Ready di LG, ad esempio un orologio o un'opera d'arte, invece di oscurarsi, a partire dal prossimo spegnimento. Consuma circa 30 W su una LG C2, quasi quanto da accesa. La prima volta la TV chiede di premere OK sul telecomando. Home riaccende la TV dall'orologio; il tasto di accensione la spegne del tutto.", "from": "Switched off with the remote, the TV shows LG's Always Ready screen, such as a clock or artwork, instead of going dark, from the next time it is switched off. Uses about 30 W on an LG C2, close to what it uses when on. The first time, the TV asks for OK on the remote. Home turns the TV back on from the clock; the power button switches it fully off."},
  "adv.ambient": {"text": "Luce ambientale", "from": "Ambient light"},

@@ -1,4 +1,6 @@
 {
+ "home.football.nextMatch": {"from": "Next match", "text": "Próximo partido"},
+ "home.football.nextHelp": {"from": "Selected teams also show their next match, with its date and kickoff time when available.", "text": "Los equipos seleccionados también muestran su próximo partido, con la fecha y la hora de inicio cuando estén disponibles."},
  "search.clear": {"text": "Borrar búsqueda", "from": "Clear search"},
  "search.category": {"text": "Categoría: {category}", "from": "Category: {category}"},
  "search.count": {"text": "{n} resultados", "from": "{n} results"},

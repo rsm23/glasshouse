@@ -90,20 +90,24 @@ function competitor(raw) {
   var score = typeof value === 'number' || typeof value === 'string' ? String(value) : '';
   return { id: team.id, name: text(team.shortDisplayName || team.displayName, 80), score: /^\d{1,3}$/.test(score) ? +score : null };
 }
-function match(event, completed) {
+function match(event, completed, upcoming) {
   var game = event && event.competitions && event.competitions[0], status = game && game.status || event && event.status;
   var type = status && status.type;
   if (!game || !type || /SUSPEND|POSTPONE|DELAY|CANCEL|ABANDON|INTERRUPT/.test(type.name || '')) return null;
-  if (completed ? type.state !== 'post' || type.completed !== true : type.state !== 'in' || type.completed) return null;
+  if (completed ? type.state !== 'post' || type.completed !== true : type.state !== (upcoming ? 'pre' : 'in') || type.completed) return null;
   var sides = Array.isArray(game.competitors) ? game.competitors : [];
   var home = competitor(sides.filter(function (side) { return side && side.homeAway === 'home'; })[0]);
   var away = competitor(sides.filter(function (side) { return side && side.homeAway === 'away'; })[0]);
   if (!home || !away || !teamId(event.id)) return null;
   var result = { id: event.id, home: home, away: away, status: text(type.shortDetail || status.displayClock || type.detail, 30), date: '' };
-  if (completed) {
+  if (completed || upcoming) {
     var date = typeof event.date === 'string' ? Date.parse(event.date) : NaN;
-    if (!isFinite(date) || date > now() || home.score === null || away.score === null) return null;
+    if (!isFinite(date) || (upcoming ? date <= now() : date > now() || home.score === null || away.score === null)) return null;
     result.date = new Date(date).toISOString();
+  }
+  if (upcoming) {
+    result.upcoming = true; result.timeValid = event.timeValid === true && game.timeValid !== false;
+    home.score = null; away.score = null;
   }
   return result;
 }
@@ -154,18 +158,22 @@ function teamSchedule(team, fixtures, cb) {
   return request((fixtures ? 'fixtures:' : 'results:') + team.id, path, function (raw) {
     if (!raw || !Array.isArray(raw.events)) return null;
     var matches = raw.events.slice(0, 500).map(function (event) {
-      var result = match(event, !fixtures);
+      var result = match(event, !fixtures) || (fixtures ? match(event, false, true) : null);
       if (!result || result.home.id !== team.id && result.away.id !== team.id) return null;
       result.league = text(event.league && event.league.name, 80);
       return result;
     }).filter(function (item) { return item !== null; });
-    if (fixtures) return matches;
+    if (fixtures) {
+      var upcoming = matches.filter(function (item) { return item.upcoming; });
+      upcoming.sort(function (a, b) { return a.date < b.date ? -1 : a.date === b.date ? 0 : 1; });
+      return matches.filter(function (item) { return !item.upcoming; }).concat(upcoming.slice(0, 1));
+    }
     matches.sort(function (a, b) { return a.date < b.date ? 1 : a.date === b.date ? 0 : -1; });
     return matches.slice(0, 1);
   }, FRESH_MS, cb);
 }
 function collectTeams(teams, fixtures, deadline, cb) {
-  var pending = teams.length, failed = 0, matches = [], missing = [], cancels = [], finished = false, updated = now();
+  var pending = teams.length, failed = 0, matches = [], nextMatches = [], missing = [], cancels = [], finished = false, updated = now();
   var timer = scheduleTimer(finish, Math.max(1, deadline - now())); readTimers.push(timer);
   function finish() {
     if (finished) return;
@@ -176,9 +184,10 @@ function collectTeams(teams, fixtures, deadline, cb) {
       if (!fixtures && a.date !== b.date) return a.date < b.date ? 1 : -1;
       return a.id < b.id ? -1 : a.id === b.id ? 0 : 1;
     });
-    cb({ ok: true, available: matches.length > 0 || pending === 0 && failed < teams.length,
+    nextMatches.sort(function (a, b) { return a.date < b.date ? -1 : a.date === b.date ? 0 : 1; });
+    cb({ ok: true, available: matches.length > 0 || nextMatches.length > 0 || pending === 0 && failed < teams.length,
       loading: pending > 0, partial: failed > 0 || pending > 0, updated: updated,
-      matches: matches, missingTeams: missing });
+      matches: matches, nextMatches: nextMatches, missingTeams: missing });
   }
   teams.forEach(function (team) {
     cancels.push(teamSchedule(team, fixtures, function (data, time) {
@@ -186,7 +195,12 @@ function collectTeams(teams, fixtures, deadline, cb) {
       if (!data) failed++;
       else updated = Math.min(updated, time);
       if (!fixtures && (!data || !data.length)) missing.push({ id: team.id, name: team.name, unavailable: !data });
-      (data || []).forEach(function (item) { if (!matches.some(function (have) { return have.id === item.id; })) matches.push(item); });
+      (data || []).forEach(function (item) {
+        // A cached fixture may have kicked off before the next refresh.
+        if (item.upcoming && Date.parse(item.date) <= now()) return;
+        var list = item.upcoming ? nextMatches : matches;
+        if (!list.some(function (have) { return have.id === item.id; })) list.push(item);
+      });
       if (!--pending) finish();
     }));
   });
@@ -198,7 +212,11 @@ function scores(settings, cb) {
   var deadline = now() + READ_MS;
   collectTeams(settings.teams, true, deadline, function (live) {
     if (live.matches.length || live.partial) { live.mode = 'live'; return cb(live); }
-    collectTeams(settings.teams, false, deadline, function (results) { results.mode = 'latest'; cb(results); });
+    collectTeams(settings.teams, false, deadline, function (results) {
+      results.mode = 'latest'; results.nextMatches = live.nextMatches;
+      results.available = results.available || live.nextMatches.length > 0;
+      results.updated = Math.min(results.updated, live.updated); cb(results);
+    });
   });
 }
 module.exports = { normalise: normalise, leagues: leagues, teams: teams, read: scores, init: function (opts) {

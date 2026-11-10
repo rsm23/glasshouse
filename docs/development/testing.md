@@ -35,6 +35,9 @@ It also checks national teams without leagues, all-competition team fixtures,
 latest completed results selected by date, object-valued scores, missing/future
 results, shared-opponent deduplication, failure versus empty results, bounded
 read deadlines with detached waiters, and all 64 selected teams.
+Next-fixture checks cover chronological selection, shared opponents, missing
+dates, unconfirmed kickoff times, excluded statuses, expired cached fixtures,
+and keeping upcoming fixtures when completed results fail.
 League-only reads also return loading progress at the 15-second deadline,
 retain received live games, detach expired readers without affecting other
 readers or the shared cache, and ignore late replies after responding.
@@ -45,6 +48,8 @@ and stopping polling while covered. Match scores in browser tests are synthetic.
 National-team choices cover men and women, persistence and removal of the last
 selection. Latest-result checks cover dates, no-result entries, the expanded
 view and continued overflow scrolling.
+Next-match rows cover the compact and expanded views, local dates and kickoff
+times, omitted unconfirmed times, and displaying fixtures without results.
 The ES5 check includes `assets/home-football-view.js` alongside the other Home
 widget scripts.
 

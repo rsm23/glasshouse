@@ -1,4 +1,6 @@
 {
+ "home.football.nextMatch": {"from": "Next match", "text": "Nächstes Spiel"},
+ "home.football.nextHelp": {"from": "Selected teams also show their next match, with its date and kickoff time when available.", "text": "Ausgewählte Teams zeigen auch ihr nächstes Spiel mit Datum und, falls verfügbar, Anstoßzeit."},
   "home.arrange.done": {
     "text": "Fertig",
     "from": "Done"

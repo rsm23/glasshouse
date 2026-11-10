@@ -181,6 +181,13 @@ TV's local time zone and a **Latest results** label. A result between two
 selected opponents appears once. A team with no available completed match has
 an explicit no-result entry; a failed lookup is marked unavailable.
 
+Selected teams also show their next scheduled match, labelled **Next match**,
+after the scores. Its date and confirmed kickoff time use the TV's local time
+zone; an unconfirmed time is omitted. Only the earliest upcoming match per
+team is shown, and a match between selected opponents appears once. Postponed,
+cancelled and suspended matches are excluded. If ESPN has no dated upcoming
+fixture, no next-match row appears.
+
 With no teams selected, the widget shows all live matches from up to eight
 selected leagues or cups. **Clear team selection** returns to this mode.
 This mode has no per-team results to fall back to, so an empty list shows

@@ -238,7 +238,9 @@ or club/national teams from ESPN once a minute while Home is visible. League
 and team reads return loading progress within 15 seconds if provider
 requests are still pending; received live games remain visible while loading.
 Selected teams follow all competitions and show their latest dated results when none
-are live. Browsing leagues and teams also contacts ESPN. Requests include the
+are live. The same team fixture reads also supply each team's next scheduled
+match and its date, with a kickoff time only when confirmed by ESPN.
+Browsing leagues and teams also contacts ESPN. Requests include the
 TV's public IP address and the requested competition or team, with no account
 or API key. Selections are saved in `home.json`
 and settings backups; scores and discovery caches stay in memory. The widget

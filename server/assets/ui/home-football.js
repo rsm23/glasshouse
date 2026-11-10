@@ -28,6 +28,7 @@ function homeFootballFields(settings, off) {
     <p class="prot-desc">${esc(t('home.football.privacy', 'Football scores are off by default. Browsing and enabling scores connects to ESPN, which receives the TV’s public IP address and the requested competitions or teams. No account or API key is needed.'))}
       <a href="https://www.espn.com/soccer/scoreboard" target="_blank" rel="noopener">${esc(t('home.football.credit', 'Scores by ESPN'))}</a></p>
     <p class="prot-desc">${esc(t('home.football.help', 'Choose leagues for all their live matches, or select club or national teams to follow across competitions. When no selected team is playing, their latest results and dates appear. Up to eight leagues and 64 teams can be saved.'))}</p>
+    <p class="prot-desc">${esc(t('home.football.nextHelp', 'Selected teams also show their next match, with its date and kickoff time when available.'))}</p>
     <button type="button" class="pill idle" ${disabled} onclick="homeFootballBrowse()">${esc(t('home.football.browse', 'Browse leagues'))}</button>
     <p class="prot-desc" role="status">${esc(homeFootballBusy ? t('home.football.loadingChoices', 'Loading football choices…') : homeFootballNote)}</p>
     ${homeFootballLeagues.length ? `<label>${esc(t('home.football.findLeague', 'Find a league'))}<input type="search" value="${esc(homeFootballQueries.league)}" oninput="homeFootballFilter(this.value, 'league')" ${off}></label>
