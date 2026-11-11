@@ -324,6 +324,10 @@ nothing is opened with Home already in front.
 
 ## Home Assistant
 
+`test-ha.js` checks Reduce Blue Light's discovery switch, default visibility,
+LG setting command topic, icon and state template for retained messages that
+predate LG settings.
+
 [`home-assistant.yml`](https://github.com/rorygallagher2024/glasshouse/blob/main/.github/workflows/home-assistant.yml) builds every discovery config the server can publish and
 runs each through Home Assistant's own validation, then checks that the volume
 entities are available exactly when the TV lets their volume be changed. Home
