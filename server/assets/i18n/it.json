@@ -531,7 +531,7 @@
  "home.leftOut": {"text": "Esclusi", "from": "Left out"},
  "home.lgHome": {"text": "Home LG", "from": "LG Home"},
  "home.livePreview": {"text": "Anteprima dal vivo", "from": "Live preview"},
- "home.livePreviewDesc": {"text": "Un’immagine dal vivo, senza audio, dell’ingresso o del canale selezionato in Glasshouse Home, in alto a destra, con i dettagli dell’immagine accanto. Passa la TV a quell’ingresso dietro Home senza risvegliare nulla, e un canale mostrato così non diventa l’ultimo canale.", "from": "A silent live picture of the input or channel in focus on Glasshouse Home, in the top right, with the picture details beside it. It switches the TV to that input behind Home without waking anything, and a channel shown this way does not become the last channel."},
+ "home.livePreviewDesc": {"text": "Un’immagine dal vivo dell’ingresso o del canale selezionato in Glasshouse Home, in alto a destra, con i dettagli dell’immagine accanto. Passa la TV a quell’ingresso dietro Home senza risvegliare nulla, e un canale mostrato così non diventa l’ultimo canale.", "from": "A live picture of the input or channel in focus on Glasshouse Home, in the top right, with the picture details beside it. It switches the TV to that input behind Home without waking anything, and a channel shown this way does not become the last channel."},
  "home.now.app": {"text": "App su questa TV", "from": "App on this TV"},
  "home.now.channel": {"text": "Canale {number}", "from": "Channel {number}"},
  "home.now.channelShow": {"text": "Canale {number}: {title}", "from": "Channel {number}: {title}"},
@@ -560,6 +560,8 @@
  "home.previewAlwaysDesc": {"text": "L'anteprima resta attiva ogni volta che Glasshouse Home è sullo schermo, non solo quando è selezionato un riquadro che ne ha una: l'ingresso HDMI guardato per ultimo, altrimenti la TV sull'ultimo canale. Scegliendo un altro ingresso o canale si sposta lì.", "from": "The preview runs whenever Glasshouse Home is on screen, not only while a tile with one is chosen: the HDMI input last watched, or otherwise the TV on its last channel. Choosing another input or channel moves it there."},
  "home.previewInTile": {"text": "Anteprima nel riquadro", "from": "Preview in the tile"},
  "home.previewInTileDesc": {"text": "L’anteprima riempie il riquadro che mostra, sotto il nome del riquadro stesso, invece di comparire accanto all’orologio.", "from": "The preview fills the tile it shows, under the tile’s own name, rather than beside the clock."},
+ "home.previewSound": {"text": "Audio dell’anteprima", "from": "Preview sound"},
+ "home.previewSoundDesc": {"text": "L’anteprima riproduce l’audio dell’ingresso o del canale che mostra, invece di restare muta. La modifica vale anche per un’anteprima già in riproduzione.", "from": "The preview plays the sound of the input or channel it shows, rather than none. Switching it changes a preview already playing."},
  "home.recents.allClosed": {"text": "App recenti chiuse", "from": "Recent apps closed"},
  "home.recents.close": {"text": "Chiudi", "from": "Close"},
  "home.recents.closeAll": {"text": "Chiudi tutte", "from": "Close all"},
@@ -1278,6 +1280,7 @@
  "srv.daemon.uploadd.detail": {"text": "Invia dati diagnostici a LG", "from": "Sends diagnostic data to LG"},
  "srv.fetch.badChars": {"text": "l'indirizzo contiene spazi o caratteri di controllo", "from": "the address contains spaces or control characters"},
  "srv.fetch.badScheme": {"text": "l'indirizzo deve iniziare con http:// o https://", "from": "the address must start with http:// or https://"},
+ "srv.fetch.certFailed": {"text": "Verifica del certificato non riuscita per {host}. Controlla la data e l'ora del televisore o la connessione.", "from": "Certificate verification failed for {host}. Check the TV's date and time, or the connection."},
  "srv.fetch.github404": {"text": "GitHub ha restituito 404 per {where}: nessuna versione ancora pubblicata, o il repository non è visibile", "from": "GitHub returned 404 for {where} - no release published yet, or the repository is not visible"},
  "srv.fetch.githubDown": {"text": "Al momento GitHub non risponde ({status}). Riprova più tardi.", "from": "GitHub is not answering at the moment ({status}). Try again later."},
  "srv.fetch.githubLimit": {"text": "GitHub ha rifiutato la richiesta ({status}). Consente 60 controlli all'ora da un indirizzo, quindi riprova tra un'ora; se continua a succedere, qualcosa nella rete potrebbe bloccarlo.", "from": "GitHub refused the request ({status}). It allows 60 checks an hour from one address, so try again in an hour; if it keeps happening, something on the network may be blocking it."},
@@ -3285,5 +3288,10 @@
  "tv.saver.exclude": {"text": "Premi OK per escludere dalla rotazione casuale", "from": "Press OK to exclude from random rotation"},
  "tv.saver.include": {"text": "Premi OK per includere nella rotazione casuale", "from": "Press OK to include in random rotation"},
  "tv.saver.random.hint": {"text": "Sceglie un salvaschermo diverso ogni volta.", "from": "Picks a different screen saver each time."},
- "tv.saver.random.hintUpNext": {"text": "Sceglie un salvaschermo diverso ogni volta. Prossimo: {name}.", "from": "Picks a different screen saver each time. Up next: {name}."}
+ "tv.saver.random.hintUpNext": {"text": "Sceglie un salvaschermo diverso ogni volta. Prossimo: {name}.", "from": "Picks a different screen saver each time. Up next: {name}."},
+ "adv.nightlyRefresh": {"text": "Riavvio notturno", "from": "Nightly refresh reboot"},
+ "adv.nightlyRefresh.desc": {"text": "Allinea il riavvio di manutenzione ogni 24 ore del TV con la finestra di spegnimento notturno. Previene un bug nel software di LG in cui il riavvio diurno causa lo spegnimento completo del TV dopo quattro ore.", "from": "Aligns the TV's 24-hour maintenance reboot with your nightly power-down window. Prevents a bug in LG's software where rebooting during the day causes the TV to power off completely four hours later."},
+ "tv.options.nightlyRefresh.hint": {"text": "Allinea il riavvio di manutenzione ogni 24 ore del TV con la finestra di spegnimento notturno, evitando lo spegnimento completo dopo quattro ore.", "from": "Aligns the TV's 24-hour maintenance reboot with your nightly power-down window, preventing a bug in LG's software that powers off the TV completely four hours after a daytime reboot."},
+ "tv.flash.nightlyRefreshOn": {"text": "Riavvio notturno attivato", "from": "Nightly refresh reboot turned on"},
+ "tv.flash.nightlyRefreshOff": {"text": "Riavvio notturno disattivato", "from": "Nightly refresh reboot turned off"}
 }

@@ -408,6 +408,9 @@ function defaults() {
     previewAlways: false,
     // The live preview in the tile it shows, rather than beside the clock.
     previewInTile: false,
+    // The live preview's sound: muted unless switched on, as Home is often
+    // passed through on the way to something else.
+    previewSound: false,
     // A moving background drawn by the view in place of the pictures: off,
     // or one of WALL_ANIMS.
     wallAnim: 'off',
@@ -509,6 +512,7 @@ function normalise(raw) {
   d.view = raw.view === 'alternative' ? 'alternative' : 'standard';
   d.previewAlways = raw.previewAlways === true;
   d.previewInTile = raw.previewInTile === true;
+  d.previewSound = raw.previewSound === true;
   d.wallAnim = WALL_ANIMS.indexOf(raw.wallAnim) !== -1 ? raw.wallAnim : 'off';
   d.animTheme = raw.animTheme === 'custom' || ANIM_THEMES.some(function (th) { return th.id === raw.animTheme; }) ? raw.animTheme : 'auto';
   d.animSky = HEX_COLOUR.test(raw.animSky) ? String(raw.animSky).toLowerCase() : d.animSky;
@@ -673,6 +677,7 @@ function setLayout(body, cb) {
     weatherPlace: body.weatherPlace !== undefined ? body.weatherPlace : c.weatherPlace,
     previewAlways: typeof body.previewAlways === 'boolean' ? body.previewAlways : c.previewAlways,
     previewInTile: typeof body.previewInTile === 'boolean' ? body.previewInTile : c.previewInTile,
+    previewSound: typeof body.previewSound === 'boolean' ? body.previewSound : c.previewSound,
     wallAnim: body.wallAnim !== undefined ? body.wallAnim : c.wallAnim,
     animTheme: body.animTheme !== undefined ? body.animTheme : c.animTheme,
     animSky: body.animSky !== undefined ? body.animSky : c.animSky,
@@ -728,7 +733,7 @@ function layoutOf(c) {
     searchHintSeen: c.searchHintSeen, picture: c.picture, livePreview: c.livePreview, search: c.search, recommended: c.recommended,
     fade: c.fade, wallDrift: c.wallDrift, wallCrossfade: c.wallCrossfade, smoothScroll: c.smoothScroll, slidePanels: c.slidePanels,
     darkening: c.darkening, hideUnused: c.hideUnused, showClock: c.showClock, widgets: widgets.forDisplay(c.widgets), widgetPlacement: widgets.placement(c), rowsBottom: c.rowsBottom, view: c.view,
-    showLastOn: c.showLastOn, showAppCount: c.showAppCount, showCec: c.showCec, showTvLogos: c.showTvLogos, weather: c.weather, weatherPlace: c.weatherPlace, previewAlways: c.previewAlways, previewInTile: c.previewInTile, wallAnim: c.wallAnim,
+    showLastOn: c.showLastOn, showAppCount: c.showAppCount, showCec: c.showCec, showTvLogos: c.showTvLogos, weather: c.weather, weatherPlace: c.weatherPlace, previewAlways: c.previewAlways, previewInTile: c.previewInTile, previewSound: c.previewSound, wallAnim: c.wallAnim,
     animTheme: c.animTheme, animSky: c.animSky, animLight: c.animLight, animThemes: ANIM_THEMES,
     wallShuffleMinutes: c.wallShuffleMinutes, shuffleMinutes: SHUFFLE_MINUTES, colours: c.colours,
     // Not saved: { host, by } while the ad blocker blocks LG's search (lib/home-search).
@@ -1488,10 +1493,20 @@ function toLgHome(why, cb) {
     return setHomeKey('', function () {
       // webOS 3: the press itself opened LG's ribbon.
       if (homeKeyRead()) return cb({ ok: true });
-      setTimeout(function () {
-        if (!injectKeyFn) return cb({ ok: true });
-        injectKeyFn(125, function (ok) { cb({ ok: !!ok }); }, 100);
-      }, 300);
+      readSettings(['defaultApps'], function (s) {
+        var homeApp = (s && s.defaultApps && s.defaultApps.home) || '';
+        if (homeApp && homeApp !== HOME_APP) {
+          return launch(homeApp, null, function (r) {
+            if (r && r.ok) return cb({ ok: true });
+            if (!injectKeyFn) return cb({ ok: true });
+            injectKeyFn(125, function (ok) { cb({ ok: !!ok }); }, 100);
+          });
+        }
+        setTimeout(function () {
+          if (!injectKeyFn) return cb({ ok: true });
+          injectKeyFn(125, function (ok) { cb({ ok: !!ok }); }, 100);
+        }, 300);
+      });
     });
   }
   if (!readConfig().enabled) return launch(LG_HOME, null, cb);
@@ -1659,9 +1674,11 @@ function change(action, cb) {
 
 function copy(o) { return JSON.parse(JSON.stringify(o)); }
 
-// webOS 3 is taken to have the same ribbon as webOS 4, untried.
+// webOS 3-6 run Glasshouse Home as a standalone app (com.tvweb.home) with the
+// Home key directed to it by the remote key filter, avoiding the sam restarts
+// of takeover that break Widevine DRM, ESN, and HDMI EDID audio on webOS 5 and 6.
 function isStandalone() {
-  return /^[34]\./.test(String(webosVersion || ''));
+  return /^[3456]\./.test(String(webosVersion || ''));
 }
 
 /*
@@ -1686,8 +1703,8 @@ function isHomeInPlace() {
 
 function supported() {
   var v = String(webosVersion || '');
-  // Tried on a B8 (4.4.3).
-  if (/^4\./.test(v) || (/^3\./.test(v) && allowExperimentalFn())) return { ok: true, webos: v, experimental: true, standalone: true };
+  // Tried on a B8 (4.4.3), CX (5.5.0), and C1 (6.5.3).
+  if (/^[456]\./.test(v) || (/^3\./.test(v) && allowExperimentalFn())) return { ok: true, webos: v, experimental: true, standalone: true };
   if (/^9\./.test(v)) return { ok: true, webos: v };
   // LG's Home is the same native app as on webOS 9; sam is nudged from the
   // country's blocked list (lib/samrescan). Tried on a 65UQ801C0SB (7.6.0).
@@ -1696,13 +1713,6 @@ function supported() {
   // Tried on a G5 (webOS 10.3.1), and a C5, G3, G4 and C3 (11.2.0); a later
   // version, not tried, needs the setting.
   if (/^1[01]\./.test(v) || (parseInt(v, 10) >= 12 && allowExperimentalFn())) return { ok: true, webos: v, experimental: true };
-  // LG's Home is a native app there too (a CX on 5.5.0-19), but sam has
-  // neither the configd nudge nor the block and release, so taking its place
-  // restarts sam, which both switches need (lib/samrescan), and that closes
-  // the apps open: restartsApps has the dashboards say so. webOS 6 (a C1 on
-  // 6.4.0 and 6.5.3, a B1 on 6.5.3) shows the same limits. Tried on all three
-  // and a CX through #910.
-  if (/^[56]\./.test(v)) return { ok: true, webos: v, experimental: true, restartsApps: true };
   return {
     ok: false, webos: v || null,
     reason: msg('srv.home.untested', 'Glasshouse Home has been tried only on webOS 4, 5, 6, 7, 9, 10 and 11. This TV runs webOS {version}.', { version: v || '?' })
@@ -2848,20 +2858,33 @@ function start(done) {
       homeKeysFn(true);
       handOverFn(hideApps);
     }
-    if (c.restorePending || (!c.enabled && !isStandalone() && takeover.mounted())) {
-      return disable(function (r) { if (!r.ok) console.error('home: ' + r.error); done(); });
+    function clearPreviousTakeover(next) {
+      if (!isStandalone()) return next();
+      if (!takeover.mounted() && !c.lgDefaultHome) return next();
+      console.log('home: releasing previous takeover for standalone mode');
+      takeover.release(function () {
+        restoreDefaultHome(function () {
+          c = readConfig();
+          next();
+        });
+      });
     }
-    startingNotice(c.enabled);
-    // Off, but the Home key's target was never put back: a switch-off cut short.
-    if (!c.enabled) return syncDefaultHome(function () { done(); });
-    wasEnabled = true;
-    switchTo(true, function (r) {
-      if (!r.ok) console.error('home: could not take LG\'s Home\'s place: ' + r.error);
-      var left = 2;
-      function synced() { if (--left === 0) done(); }
-      syncLgAutoLaunch(synced);
-      syncDefaultHome(synced);
-      if (r.ok) watchBootOpen();
+    clearPreviousTakeover(function () {
+      if (c.restorePending || (!c.enabled && !isStandalone() && takeover.mounted())) {
+        return disable(function (r) { if (!r.ok) console.error('home: ' + r.error); done(); });
+      }
+      startingNotice(c.enabled);
+      // Off, but the Home key's target was never put back: a switch-off cut short.
+      if (!c.enabled) return syncDefaultHome(function () { done(); });
+      wasEnabled = true;
+      switchTo(true, function (r) {
+        if (!r.ok) console.error('home: could not ' + (isStandalone() ? 'enable Glasshouse Home' : 'take LG\'s Home\'s place') + ': ' + r.error);
+        var left = 2;
+        function synced() { if (--left === 0) done(); }
+        syncLgAutoLaunch(synced);
+        syncDefaultHome(synced);
+        if (r.ok) watchBootOpen();
+      });
     });
   });
 }
