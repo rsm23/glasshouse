@@ -1602,7 +1602,7 @@ feature off, or `tvwebctl restore-home` before uninstalling, deletes the webOS
 ## Glasshouse Home
 
 `lib/home.js` runs a home screen of Glasshouse's own in place of LG's, opt-in
-from the dashboard's Home tab (webOS 4, 5, 6, 7, 9, 10 and 11; webOS 3, standalone as on webOS 4, and later versions with `allowExperimentalHome`). The view is `assets/home.html`,
+from the dashboard's Home tab (webOS 4, 5, 6, 7, 9, 10 and 11; webOS 3 and later versions with `allowExperimentalHome`). The view is `assets/home.html`,
 opened by a small web app whose files are `assets/home-app/index.html` and its
 icons.
 
@@ -1616,7 +1616,9 @@ Home in LG's Home's place with no server to serve it. The Home routes are not se
 keeps the server, since it cannot tell whether Glasshouse Home holds LG's
 Home's place.
 
-Switched on, that app runs under LG's Home's own id. `lib/home-takeover.js`
+On webOS 3–6, the app runs as `com.tvweb.home`, directed by the remote key filter, or by reading the Home key on webOS 3. LG's Home keeps its own files, and switching launchers leaves sam and open apps running.
+
+On webOS 7, 9, 10 and 11, that app runs under LG's Home's own id. `lib/home-takeover.js`
 stages it in `/var/lib/tvweb/home-takeover` with an `appinfo.json` naming
 `com.webos.app.home` (type `web`, `visible` false, `appCategory` `["home"]`
 as LG's has it), bind-mounts the directory over
@@ -1869,7 +1871,7 @@ for submissions. No widget code or user-specified URL runs.
 
 `lib/home-launcher.js` puts another page in the view's place; everything that
 gets the view in front of the TV is unchanged. The app in LG's Home's place
-(or `com.tvweb.home` on webOS 3 and 4, which is installed once and never
+(or `com.tvweb.home` on webOS 3–6, which is installed once and never
 changes) opens `/assets/home.html` as before, and while a launcher is chosen
 and Glasshouse Home is on, the server answers that with a redirect to
 `/home/launcher/`. The heartbeat's reply carries `launcher`, a revision that
