@@ -1,4 +1,4 @@
-// The Control and Advanced tabs: power, volume, backlight, toasts, URLs and the TV's switches.
+// The Control, System and Ambient Light tabs: power, volume, backlight and the TV's switches.
 
 let errTimer = null;
 function clearErr() {
@@ -10,6 +10,7 @@ function clearErr() {
   const off = q('offline');
   const isOffline = q('panels') && q('panels').classList.contains('stale') && (Date.now() - lastOk > 6000);
   if (off && !isOffline) off.hidden = true;
+  document.querySelectorAll('[data-widget-error]').forEach(note => { note.hidden = true; note.textContent = ''; });
 }
 
 function showErr(m) {
@@ -18,6 +19,12 @@ function showErr(m) {
   if (offMsg) offMsg.style.display = 'none';
   if (e) { e.textContent = m; e.style.display = 'inline'; }
   if (off) off.hidden = false;
+  const dialog = q('home-store-preview')?.open ? q('home-store-preview') : q('home-widget-manager');
+  if (dialog?.open) {
+    const note = dialog.querySelector('[data-widget-error]');
+    note.textContent = m;
+    note.hidden = false;
+  }
   errTimer = setTimeout(clearErr, 6000);
 }
 
@@ -39,12 +46,41 @@ function toggleHomeAutoLaunch(id) { sendCommand('homeAutoLaunch', flip(id || 'ho
 function toggleClockHour12() { sendCommand('clockHour12', flip('btn_clock12')); }
 function toggleLgLogo() { sendCommand('lgLogo', flip('btn_lglogo')); }
 function togglePiccap() { sendCommand('piccap', flip('btn_piccap')); }
-function toggleHuesync() { sendCommand('huesync', flip('btn_huesync')); }
+// Starting can take up to ~9 s of retries on the TV, which refuses setting
+// changes meanwhile: the settings are locked for it, as a setting change
+// locks this switch.
+async function toggleHuesync() {
+  if (huesyncSettingsBusy) return;
+  const next = flip('btn_huesync');
+  huesyncSettingsBusy = true;
+  const settings = q('huesync-settings');
+  const locked = ['btn_huesync', 'ctl_huesync'].map(q)
+    .concat(settings ? [...settings.querySelectorAll('input, select, button')] : []);
+  locked.forEach(el => { if (el) el.disabled = true; });
+  try {
+    await sendCommand('huesync', next);
+  } finally {
+    huesyncSettingsBusy = false;
+    tick();
+  }
+}
 function toggleWol() { sendCommand('wakeOnLan', flip('btn_wol')); }
+
+function renderAmbientPower(which, on) {
+  advPill(which, 'btn_' + which, on);
+  const quick = q('ctl_' + which);
+  if (!quick) return;
+  quick.hidden = on === undefined;
+  if (on === undefined) return;
+  quick.classList.toggle('on', !!on);
+  quick.setAttribute('aria-pressed', String(!!on));
+  q('ctl_' + which + '_state').textContent = on ? t('common.on', 'On') : t('common.off', 'Off');
+}
 function toggleDeviceDetection() { sendCommand('deviceDetection', flip('btn_devdetect')); }
 function toggleDeviceScans() { sendCommand('deviceScans', flip('btn_devscans')); }
 function toggleAlwaysReady() { sendCommand('alwaysReady', flip('btn_ar')); }
 function toggleAlwaysReadyScreen() { sendCommand('alwaysReadyScreen', flip('btn_ars')); }
+function toggleNightlyRefresh() { sendCommand('nightlyRefresh', flip('btn_nightlyrefresh')); }
 
 function applyOptimistic(action, value) {
   if (action === 'volume') {
@@ -171,11 +207,11 @@ function applyOptimistic(action, value) {
   } else if (action === 'piccap') {
     const on = value === 'on' || value === true;
     setLease('piccap', on);
-    advPill('piccap', 'btn_piccap', on);
+    renderAmbientPower('piccap', on);
   } else if (action === 'huesync') {
     const on = value === 'on' || value === true;
     setLease('huesync', on);
-    advPill('huesync', 'btn_huesync', on);
+    renderAmbientPower('huesync', on);
   } else if (action === 'standbyLight') {
     const on = value === 'on' || value === true;
     setLease('standbyLight', on);
@@ -620,6 +656,144 @@ function initVolSlider() {
 initVolSlider();
 initBacklightSlider();
 
+// Pointer events are queued so a tap cannot overtake the movement before it.
+// WebSocket avoids an HTTP round trip between batches; POST is the fallback.
+let pointerQueue = [];
+let pointerSending = false;
+let pointerMoveTimer = null;
+let pointerSocket = null;
+let pointerEnabled = false;
+let pointerTransport = 'websocket';
+let pointerRate = 120;
+async function flushPointerQueue() {
+  if (!pointerQueue.length) return;
+  if (pointerSocket && pointerSocket.readyState === WebSocket.OPEN) {
+    while (pointerQueue.length) {
+      let body = pointerQueue.shift();
+      if (body.move) {
+        while (pointerQueue.length && pointerQueue[0].move) body.move = body.move.concat(pointerQueue.shift().move);
+      }
+      pointerSocket.send(JSON.stringify(body));
+    }
+    return;
+  }
+  if (pointerSending) return;
+  pointerSending = true;
+  let body = pointerQueue.shift();
+  if (body.move) {
+    while (pointerQueue.length && pointerQueue[0].move) body.move = body.move.concat(pointerQueue.shift().move);
+  }
+  try {
+    const r = await fetch(api('/api/pointer'), {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if (!j.ok) showErr(j.error || t('common.actionFailed', 'Action failed'));
+    else clearErr();
+  } catch (e) {
+    showErr(e.message);
+  } finally {
+    pointerSending = false;
+    flushPointerQueue();
+  }
+}
+function connectPointerSocket() {
+  if (!pointerEnabled || pointerTransport !== 'websocket' || pointerSocket || !q('disc-pointer').open) return;
+  pointerSocket = new WebSocket(api('/api/pointer').replace(/^http/, 'ws'));
+  const current = pointerSocket;
+  pointerSocket.addEventListener('open', flushPointerQueue);
+  pointerSocket.addEventListener('message', e => {
+    const result = JSON.parse(e.data);
+    if (!result.ok) showErr(result.error || t('common.actionFailed', 'Action failed'));
+  });
+  pointerSocket.addEventListener('close', () => {
+    if (pointerSocket !== current) return;
+    pointerSocket = null;
+    flushPointerQueue();
+  });
+}
+function sendPointer(body) {
+  pointerQueue.push(body);
+  if (!pointerSocket) connectPointerSocket();
+  flushPointerQueue();
+}
+function queuePointerMove(dx, dy) {
+  if (pointerQueue.length && pointerQueue[pointerQueue.length - 1].move) {
+    pointerQueue[pointerQueue.length - 1].move.push({ dx, dy });
+  } else {
+    pointerQueue.push({ move: [{ dx, dy }] });
+  }
+  if (pointerMoveTimer) return;
+  pointerMoveTimer = setTimeout(() => {
+    pointerMoveTimer = null;
+    flushPointerQueue();
+  }, 1000 / pointerRate);
+}
+
+(function initPointerPad() {
+  const pad = q('pointer-pad');
+  if (!pad) return;
+  let active = null;
+  pad.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    active = { id: e.pointerId, x: e.clientX, y: e.clientY, carryX: 0, carryY: 0, moved: 0, at: Date.now() };
+    pad.classList.add('dragging');
+    try { pad.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  pad.addEventListener('pointermove', e => {
+    if (!active || e.pointerId !== active.id) return;
+    active.carryX += (e.clientX - active.x) * 1.5;
+    active.carryY += (e.clientY - active.y) * 1.5;
+    active.moved += Math.abs(e.clientX - active.x) + Math.abs(e.clientY - active.y);
+    active.x = e.clientX;
+    active.y = e.clientY;
+    const dx = active.carryX < 0 ? Math.ceil(active.carryX) : Math.floor(active.carryX);
+    const dy = active.carryY < 0 ? Math.ceil(active.carryY) : Math.floor(active.carryY);
+    if (!dx && !dy) return;
+    active.carryX -= dx;
+    active.carryY -= dy;
+    queuePointerMove(dx, dy);
+  });
+  const finish = (e, cancelled) => {
+    if (!active || e.pointerId !== active.id) return;
+    const tap = !cancelled && active.moved < 8 && Date.now() - active.at < 400;
+    active = null;
+    pad.classList.remove('dragging');
+    try { pad.releasePointerCapture(e.pointerId); } catch (err) {}
+    if (tap) sendPointer({ click: true });
+  };
+  pad.addEventListener('pointerup', e => finish(e, false));
+  pad.addEventListener('pointercancel', e => finish(e, true));
+  pad.addEventListener('wheel', e => {
+    e.preventDefault();
+    const scale = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+    const dx = Math.round(e.deltaX * scale / 40);
+    const dy = Math.round(e.deltaY * scale / 40);
+    if (dx || dy) sendPointer({ scroll: { dx, dy } });
+  }, { passive: false });
+})();
+q('pointer-click').addEventListener('click', () => sendPointer({ click: true }));
+function closePointerSocket() {
+  if (!pointerSocket) return;
+  const current = pointerSocket;
+  pointerSocket = null;
+  current.close();
+}
+q('disc-pointer').addEventListener('toggle', () => {
+  if (q('disc-pointer').open) connectPointerSocket();
+  else closePointerSocket();
+});
+window.addEventListener('pagehide', closePointerSocket);
+function applyPointerSettings(settings) {
+  pointerEnabled = !!settings.enabled;
+  pointerTransport = settings.transport === 'http' ? 'http' : 'websocket';
+  pointerRate = [60, 120, 240].indexOf(Number(settings.updatesPerSecond)) !== -1 ? Number(settings.updatesPerSecond) : 120;
+  q('disc-pointer').hidden = !pointerEnabled || settings.allowControl === false;
+  if (!pointerEnabled || settings.allowControl === false || pointerTransport === 'http') closePointerSocket();
+  else connectPointerSocket();
+}
+
 function toggleMute() {
   muted = !muted;
   setLease('mute', muted);
@@ -723,6 +897,8 @@ async function powerAction(a) {
 // Switched off in config.json, the power buttons are not offered at all.
 fetch(api('/api/caps')).then(r => r.json()).then(cp => {
   if (!cp.allowPower) q('pwset').hidden = true;
+  applyPointerSettings({ enabled: cp.pointer, transport: cp.pointerTransport,
+    updatesPerSecond: cp.pointerRate, allowControl: cp.allowControl });
 }).catch(() => {});
 
 /*
@@ -793,3 +969,67 @@ function updateDpadMobileDefault() {
     }
   });
 })();
+
+let huesyncSettingsBusy = false;
+let lastHuesyncSettings = {};
+function renderHuesyncSettingToggle(el, on) {
+  advPill(el.id, el.id, on);
+  el.setAttribute('aria-pressed', String(on === true));
+}
+async function changeHuesyncSetting(el) {
+  if (huesyncSettingsBusy) return;
+  if (el.type === 'number' && (!el.validity.valid || el.value === '')) { el.reportValidity(); return; }
+  const key = el.id.slice(8), previous = lastHuesyncSettings[key];
+  huesyncSettingsBusy = true;
+  el.disabled = true;
+  try {
+    const result = await sendCommand('huesyncSetting', { key,
+      value: el.tagName === 'BUTTON' ? previous !== true : el.type === 'number' ? Number(el.value) :
+        el.id === 'huesync-intensity' ? Number(el.value) : el.value });
+    const actual = result && result.settings ? result.settings[key] : previous;
+    if (el.tagName === 'BUTTON') renderHuesyncSettingToggle(el, actual);
+    else el.value = actual === undefined ? '' : String(actual);
+  } finally {
+    huesyncSettingsBusy = false;
+    el.disabled = false;
+    tick();
+  }
+}
+
+function renderHuesyncSettings(hs) {
+  const container = q('huesync-settings');
+  if (!container) return;
+  const settings = hs && hs.settings || {};
+  lastHuesyncSettings = settings;
+  const diagnostics = hs && hs.diagnostics || {}, stale = settings._stale || [];
+  const notReady = diagnostics.busy === true || diagnostics.ready &&
+    (diagnostics.ready.ready === false || diagnostics.ready.supported === false) || diagnostics.bridge &&
+    (diagnostics.bridge.Connected === false || diagnostics.bridge.Authorized === false);
+  for (const id of ['btn_huesync', 'ctl_huesync']) {
+    q(id).disabled = huesyncSettingsBusy || !!notReady || hs && hs.writable === false;
+  }
+  const advanced = ['background_lightning_video', 'background_lightning_games', 'auto_start', 'auto_start_notification'];
+  container.hidden = !['brightness', 'intensity', 'sync_mode', 'current_ec', ...advanced].some(key => settings[key] !== undefined);
+  const choices = {
+    intensity: [t('adv.huesync.subtle', 'Subtle'), t('adv.huesync.moderate', 'Moderate'), t('adv.huesync.high', 'High'), t('adv.huesync.extreme', 'Extreme')].map((label, index) => ({ value: String(index), label })),
+    sync_mode: [{ value: '0', label: t('adv.huesync.video', 'Video') }, { value: '1', label: t('adv.huesync.game', 'Game') }],
+    current_ec: (settings.ec_list || []).map(area => ({ value: area.id, label: area.name }))
+  };
+  container.querySelectorAll('input, select, button').forEach(el => {
+    const key = el.id.slice(8), value = settings[key];
+    el.closest('.prot-row').hidden = value === undefined || (key === 'current_ec' && !choices.current_ec.length);
+    el.disabled = huesyncSettingsBusy || hs && hs.writable === false || !!notReady || stale.includes(key) || key === 'current_ec' && stale.includes('ec_list');
+    if (huesyncSettingsBusy || document.activeElement === el && el.tagName !== 'BUTTON') return;
+    if (el.tagName === 'SELECT') {
+      el.replaceChildren();
+      (choices[key] || []).forEach(choice => {
+        const option = document.createElement('option');
+        option.value = choice.value;
+        option.textContent = choice.label;
+        el.appendChild(option);
+      });
+      el.value = String(value);
+    } else if (el.tagName === 'BUTTON') renderHuesyncSettingToggle(el, value);
+    else el.value = value === undefined ? '' : value;
+  });
+}

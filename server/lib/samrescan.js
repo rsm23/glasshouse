@@ -51,6 +51,7 @@
  * Strict ES5: runs on node 0.12.
  */
 var fs = require('fs');
+var path = require('path');
 var execFile = require('child_process').execFile;
 var BLOCK_SCHEMA = '/etc/palm/schemas/sam/applicationManager.blockSystemApp.schema';
 var SAM_BIN = '/usr/sbin/sam';
@@ -61,6 +62,9 @@ var NUDGE_ID = 'io.github.rorygallagher2024.lg-webos-dashboard.rescan';
 var NUDGE_MS = 1500;
 var CHECK_POLL_MS = 500;
 var CHECK_POLLS = 16;
+var portStatusDir = '/proc/lg/hdmi20';
+var realtekStatusDir = '/proc/lgtv-driver/hdmi_status';
+var HDMI_BASE_MAP = { 1: 3, 2: 2, 3: 1, 4: 0 };
 
 var lunaFn = null;
 var execFn = execFile;
@@ -85,6 +89,8 @@ function init(opts) {
   samReadsKey = null;
   if (opts.nudgeMs !== undefined) NUDGE_MS = opts.nudgeMs;
   if (opts.pollMs !== undefined) CHECK_POLL_MS = opts.pollMs;
+  if (opts.portStatusDir) portStatusDir = opts.portStatusDir;
+  if (opts.realtekStatusDir) realtekStatusDir = opts.realtekStatusDir;
 }
 
 function readList(cb) {
@@ -274,76 +280,96 @@ function rereadApp(appId, check, cb) {
   });
 }
 
-/*
- * Restarts sam, and cb(true) once check(done) says sam has read the apps
- * again. The last way to make sam scan: webOS 5 and 6 have neither the
- * configd nudge nor the block and release (a CX on 5.5.0-19, a C1 on
- * 6.5.3), so Glasshouse Home, whose appinfo.json is mounted over LG's,
- * switches it on and off with this. The command is the one
- * lib/apps.js restarts sam with for tile hiding: the start limit cleared
- * first, LunaExecutable killed since it ignores SIGTERM, and the unit killed
- * so that systemd starts it again at once; initctl on Upstart TVs. A
- * foreground app that is neither Home nor the screen saver is opened again
- * afterwards, so the owner is not left on the last input.
- */
-function restart(check, cb) {
-  if (!check) return cb(false);
-  var saved = null;
-  function run() {
-    // sam and every unit that requires it, as lib/apps.js lists them: their
-    // start limit is cleared too, or a run of restarts leaves the input
-    // manager (eim) failed and the TV with no inputs.
-    var units = 'sam.service $(systemctl list-dependencies --reverse --plain --no-legend sam.service 2>/dev/null | ' +
-                'sed -n "s/^[^A-Za-z0-9]*\\([A-Za-z0-9@._-]*\\.service\\)$/\\1/p")';
-    var cmd = 'if command -v systemctl >/dev/null 2>&1; then ' +
-              'systemctl reset-failed ' + units + ' >/dev/null 2>&1 || true; ' +
-              'killall -9 LunaExecutable >/dev/null 2>&1 || true; ' +
-              'systemctl kill -s 9 sam.service >/dev/null 2>&1 || systemctl restart --no-block sam >/dev/null 2>&1 || true; ' +
-              'elif command -v initctl >/dev/null 2>&1; then ' +
-              'initctl restart sam >/dev/null 2>&1 || pkill -9 -x sam >/dev/null 2>&1 || true; ' +
-              'else ' +
-              'pkill -9 -x sam >/dev/null 2>&1 || true; ' +
-              'fi';
-    execFn('/bin/sh', ['-c', cmd], { timeout: 6000 }, function () {
-      waitFor(check, 'the restart', function (ok) {
-        startDependents(function () {
-          if (!ok || !saved) return cb(ok);
-          lunaFn('com.webos.applicationManager/launch', { id: saved }, function () { cb(ok); });
-        });
-      });
-    });
+function readRealtekPortStatus(hdmiNum) {
+  var fallback = null;
+  var sawHwPort = false;
+  for (var p = 0; p < 4; p++) {
+    var raw;
+    try {
+      raw = fs.readFileSync(path.join(realtekStatusDir, 'hdmi.p' + p), 'utf8');
+    } catch (e) {
+      continue;
+    }
+    var hw = raw.match(/^\s*hwport\s*:\s*(\d+)/m);
+    if (hw) {
+      sawHwPort = true;
+      if (parseInt(hw[1], 10) === hdmiNum) return raw;
+    } else if (p === hdmiNum - 1) {
+      fallback = raw;
+    }
   }
-  if (!lunaFn) return run();
-  lunaFn('com.webos.applicationManager/getForegroundAppInfo', {}, function (r) {
-    var id = r && r.returnValue && typeof r.appId === 'string' ? r.appId : null;
-    if (id && id !== 'com.webos.app.home' && id !== 'com.webos.app.screensaver') saved = id;
-    run();
-  });
+  return sawHwPort ? null : fallback;
 }
 
 /*
- * A unit that requires sam and hit its restart limit is started again, as
- * lib/apps.js does after a restart for tile hiding. On Upstart TVs, Upstart
- * does not restart dependent jobs, so eim is restarted here.
+ * Whether the HDMI input has an active video signal from a connected source.
+ * Non-HDMI apps return true. An HDMI input with no signal (e.g. asleep device)
+ * returns false so restarting sam does not switch to an inactive input.
  */
-function startDependents(cb) {
-  var cmd = 'if command -v systemctl >/dev/null 2>&1; then ' +
-            'for u in $(systemctl list-dependencies --reverse --plain --no-legend sam.service 2>/dev/null | ' +
-            'sed -n "s/^[^A-Za-z0-9]*\\([A-Za-z0-9@._-]*\\.service\\)$/\\1/p"); do ' +
-            'if systemctl is-failed --quiet "$u"; then systemctl reset-failed "$u"; systemctl start --no-block "$u"; fi; ' +
-            'done; ' +
-            'elif command -v initctl >/dev/null 2>&1; then ' +
-            'initctl restart eim >/dev/null 2>&1 || true; ' +
-            'fi';
-  execFn('/bin/sh', ['-c', cmd], { timeout: 6000 }, function () { cb(); });
+function hasHdmiSignal(appId) {
+  if (!appId || typeof appId !== 'string') return true;
+  var m = appId.match(/hdmi([1-4])/i);
+  if (!m) return true;
+  var hdmiNum = parseInt(m[1], 10);
+  var port = HDMI_BASE_MAP[hdmiNum];
+  if (port === undefined) return true;
+  var statusFile = path.join(portStatusDir, 'port' + port, 'status');
+  var raw = null;
+  try {
+    raw = fs.readFileSync(statusFile, 'utf8');
+  } catch (e) {
+    raw = readRealtekPortStatus(hdmiNum);
+  }
+  if (!raw) return true;
+  var rtlLock = raw.match(/^\s*phy_lock_status\s*:\s*(\d)/m);
+  if (rtlLock) return rtlLock[1] === '1';
+  var lock = raw.match(/PHY\s+Lock\[(\d)\]/i);
+  if (lock) return lock[1] === '1';
+  if (/connected:\s*off/i.test(raw)) return false;
+  if (/connected:\s*on/i.test(raw)) return true;
+  return true;
 }
+
+function canRereadApp() {
+  return fs.existsSync(blockSchema);
+}
+
+function rereadApps(ids, makeCheck, cb) {
+  if (!Array.isArray(ids) || !ids.length) return cb(false);
+  var i = 0;
+  (function next() {
+    if (i >= ids.length) return cb(true);
+    var id = ids[i++];
+    var check = makeCheck ? makeCheck(id) : null;
+    rereadApp(id, check, function (ok) {
+      if (!ok) return cb(false);
+      next();
+    });
+  })();
+}
+
+/*
+ * LG's HDMI input service subscribes to sam's foreground app once, when it
+ * starts, and never again: after sam is restarted it sees no app in front for
+ * the rest of the boot. Its EDID control then refuses every update for the
+ * input on screen ("Invalid App type", app type 0x0d), so a source is left on
+ * the basic EDID: on a 55UP77 (webOS 6.5.3) an Apple TV sent only PCM to an
+ * eARC soundbar, and MAT once the service was restarted. Nothing requires the
+ * unit, so it is restarted with sam already answering; a TV without it is
+ * left alone. A shell command, for lib/apps.js and the boot hook's copy.
+ */
+var RESUBSCRIBE_HDMI_INPUTS = 'if systemctl cat extinput-integration.service >/dev/null 2>&1; then ' +
+                              'systemctl restart --no-block extinput-integration.service && echo extinput-integration.service; fi';
 
 module.exports = {
   init: init,
   refresh: refresh,
   canNudge: canNudge,
+  canRereadApp: canRereadApp,
   rereadApp: rereadApp,
-  restart: restart,
+  rereadApps: rereadApps,
+  hasHdmiSignal: hasHdmiSignal,
+  RESUBSCRIBE_HDMI_INPUTS: RESUBSCRIBE_HDMI_INPUTS,
   KEY: KEY,
   NUDGE_ID: NUDGE_ID
 };

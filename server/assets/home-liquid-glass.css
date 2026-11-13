@@ -1,0 +1,47 @@
+/* Fork appearance; ES5-era engines use the opaque material below.
+   Blur is confined to focused surfaces, rather than every tile on the TV. */
+body{font-family:'Manrope',sans-serif;color:#ece7df}
+#when,.home-widget{
+  border-radius:28px;padding:30px 22px 18px;
+  background:rgba(24,32,45,.93);border:1px solid rgba(230,240,255,.26);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 12px 30px rgba(0,0,0,.18);
+  -webkit-transition:background-color .18s,box-shadow .18s;transition:background-color .18s,box-shadow .18s;
+}
+#clock{font-family:'Manrope',sans-serif;font-size:98px;font-weight:400;letter-spacing:-5px;line-height:1}
+#date{font-size:23px;margin-top:16px;color:#a39d93}
+.widget-name,.widget-detail,.widget-status,.fw-meta,.wk-range,.wk-data-label{color:#a39d93}
+.widget-value{font-family:'Manrope',sans-serif;font-size:58px;letter-spacing:-2px}
+.home-widget.widget-rich{padding:12px 20px}
+.widget-rich .widget-name{font-size:18px}
+.widget-rich .widget-value{font-size:38px;letter-spacing:-1px}
+.home-widget.widget-focus,#when.widget-focus{
+  outline:3px solid transparent;outline-color:#ece7df;outline-offset:5px;background:rgba(49,63,83,.96);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.38),0 14px 36px rgba(0,0,0,.32);
+}
+.tile,.alternative .tile{border-radius:24px;background:rgba(24,32,45,.78)}
+.tile.focus,.alternative .tile.focus{background:rgba(55,70,92,.96);outline:3px solid transparent;outline-color:#ece7df;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 12px 28px rgba(0,0,0,.3)}
+body.widget-focused .tile.focus{outline-color:transparent;background:rgba(24,32,45,.78);box-shadow:none}
+.app img,.app .mono{border-radius:22px}
+.row h2,.dev .path,#srcVia,#plSig,#plStrip{color:#a39d93}
+.widget-panel{left:64px;top:32px;width:1792px;height:1016px;padding:38px 48px;background:#141c29;border:1px solid rgba(230,240,255,.3);border-radius:36px;box-shadow:0 24px 64px rgba(0,0,0,.5)}
+.wp-header h1{font-family:'Manrope',sans-serif;font-weight:600;font-size:42px;letter-spacing:-1px}
+.wp-close{border-radius:999px;background:rgba(235,243,255,.12);color:#ece7df;border-color:#9baabe}
+.wp-close:focus{background:rgba(235,243,255,.24);outline:3px solid transparent;outline-color:#ece7df}
+.wp-foot,.wp-status,.wp-low{color:#a39d93}
+.wp-day{border:1px solid rgba(230,240,255,.18);border-radius:20px;background:rgba(255,255,255,.04)}
+#rail.focus svg{background:#37465c;outline:3px solid transparent;outline-color:#ece7df}
+/* Keep video-plane previews square: rounding them hides real TV video. */
+@supports ((backdrop-filter:blur(20px)) or (-webkit-backdrop-filter:blur(20px))){
+  #when,.home-widget{background:linear-gradient(135deg,rgba(255,255,255,.12),rgba(255,255,255,0) 58%),rgba(24,32,45,.84)}
+  .home-widget.widget-focus,#when.widget-focus,.tile.focus,#rail.focus svg{
+    -webkit-backdrop-filter:blur(18px) saturate(130%);backdrop-filter:blur(18px) saturate(130%);
+  }
+}
+@media (prefers-reduced-motion:reduce){
+  *,*:before,*:after{-webkit-animation:none!important;animation:none!important;-webkit-transition:none!important;transition:none!important}
+}
+@media (prefers-reduced-transparency:reduce){
+  #when,.home-widget,.tile,.alternative .tile{background:#18202d}
+  .home-widget.widget-focus,#when.widget-focus,.tile.focus,#rail.focus svg{-webkit-backdrop-filter:none;backdrop-filter:none;background:#37465c}
+}
+@media (prefers-contrast:more){#when,.home-widget,.tile{border:2px solid #a39d93}}

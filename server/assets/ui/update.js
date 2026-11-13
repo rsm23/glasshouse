@@ -162,6 +162,39 @@ function renderUpdate(d) {
     }
   }
 
+  const pointerRow = q('exp-pointer-row');
+  if (pointerRow && d.pointer) {
+    pointerRow.hidden = !d.pointer.supported;
+    updateToggle('exp-pointer', {
+      cls: d.pointer.enabled ? 'good' : 'idle',
+      label: d.pointer.enabled ? t('common.on', 'On') : t('common.off', 'Off'),
+      on: d.pointer.enabled,
+      disabled: !d.writable
+    });
+    q('exp-pointer-settings').hidden = !d.pointer.enabled;
+    q('exp-pointer-transport').value = d.pointer.transport;
+    q('exp-pointer-transport').disabled = !d.writable;
+    const rate = q('exp-pointer-rate');
+    if (!rate.options.length) [60, 120, 240].forEach(n => rate.add(new Option(t('server.experimental.pointer.rate.value', '{n} updates per second', { n }), String(n))));
+    rate.value = String(d.pointer.updatesPerSecond);
+    rate.disabled = !d.writable;
+    applyPointerSettings(Object.assign({ allowControl: !!d.writable }, d.pointer));
+  }
+
+  // Offered where the input bar has not been tried; where it has, it needs no switch.
+  const barRow = q('exp-inputbar-row');
+  if (barRow) {
+    barRow.hidden = !(d.inputBar && d.inputBar.standing === 'experimental');
+    if (d.inputBar) {
+      updateToggle('exp-inputbar', {
+        cls: d.inputBar.experimental ? 'good' : 'idle',
+        label: d.inputBar.experimental ? t('common.on', 'On') : t('common.off', 'Off'),
+        on: d.inputBar.experimental,
+        disabled: !d.writable
+      });
+    }
+  }
+
   msg.textContent = (d.state === 'error' || d.state === 'offline') ? (d.error || t('server.checkFailed', 'the check failed'))
     : d.state === 'installed' ? t('server.installed', 'Installed. The server is restarting - this page reconnects on its own.')
     : updArrival;
@@ -865,6 +898,31 @@ async function toggleExpScreensaver() {
   const b = q('exp-screensaver');
   b.disabled = true;
   const r = await sendCommand('setWebos10ScreensaversAllowed', !b.dataset.on);
+  if (r && r.ok) renderUpdate(r); else loadUpdate();
+}
+
+async function toggleExpPointer() {
+  const b = q('exp-pointer');
+  b.disabled = true;
+  const r = await sendCommand('setPointerEnabled', !b.dataset.on);
+  if (r && r.ok) renderUpdate(r); else loadUpdate();
+}
+
+async function savePointerSettings() {
+  const transport = q('exp-pointer-transport'), rate = q('exp-pointer-rate');
+  transport.disabled = rate.disabled = true;
+  const r = await sendCommand('setPointerSettings', {
+    transport: transport.value, updatesPerSecond: Number(rate.value)
+  });
+  if (r && r.ok) renderUpdate(r); else loadUpdate();
+}
+q('exp-pointer-transport').addEventListener('change', savePointerSettings);
+q('exp-pointer-rate').addEventListener('change', savePointerSettings);
+
+async function toggleExpInputBar() {
+  const b = q('exp-inputbar');
+  b.disabled = true;
+  const r = await sendCommand('setInputBarAllowed', !b.dataset.on);
   if (r && r.ok) renderUpdate(r); else loadUpdate();
 }
 

@@ -97,13 +97,22 @@ covers.
   check is about (`waitForResponse`, `waitForFunction`, or polling a
   condition), not a fixed `waitForTimeout`, which a slow CI runner can
   outlast. A fixed wait is only for showing that something *doesn't* happen.
+  In a unit test, `waitFor` from `test/wait-for.js` polls for it.
 * **Check before acting on something that may be absent.** An action on a
   missing element waits out Playwright's 30 s before it fails, so `.catch()`
   after one costs that whole wait. Use `count()` first.
 * **Don't wait on the server's real timers.** If a test needs a 10 s grace
   period or a retry interval to pass, the module takes it from `init` and the
   test passes a few milliseconds. Time that has to look as if it passed comes
-  from a faked clock (`now`).
+  from a faked clock (`now`). A suite with no real network, file or process
+  I/O can run all its timers on `test/fake-clock.js` instead, which takes no
+  real time and fires every timer in its order however slow the runner.
+* **Listen on port 0, or take a port from `test/ports.js`.** Suites run side
+  by side, so a port the system handed out and was closed again can be
+  another suite's by the time a server starts on it. A server the test starts
+  itself listens on 0 and reads its port back; one that is told its port
+  beforehand, such as the whole server in its own process, gets it from
+  `freePort` in `test/ports.js`.
 * **Never run a TV's commands for real.** A module that runs `systemctl`,
   `mount` or `luna-send` takes the function that runs them from `init`, and
   its tests pass one that records the command.
@@ -119,6 +128,19 @@ covers.
   anything the server changes on the TV in `docs/TV-CHANGES.md`.
 
 ## Code reviews
+
+### Widget catalogue contributions
+
+Widget templates and their curated catalogue live in
+`server/assets/widget-store/catalogue.json` in this repository. **Submit a
+widget** on the dashboard opens a prefilled issue; the repository's widget
+issue form becomes available on the default branch. Submissions need review
+before inclusion and must state their licence and omit private content. A
+catalogue PR keeps ids stable, bumps changed revisions and runs
+`node test/test-home-widget-store.js` and the normal checks. See
+[Writing a widget](development/WRITING-WIDGETS.md#contribute-to-the-catalogue).
+
+### Review comments
 
 We prefer code review comments to follow the [Conventional Comments](https://conventionalcomments.org/) standard (e.g. `praise:`, `suggestion:`, `issue:`, `nitpick:`, `question:`). This keeps feedback constructive, actionable, and makes it clear whether a comment is blocking or an optional suggestion. Refer to [conventionalcomments.org](https://conventionalcomments.org/) for the complete specification and examples.
 
@@ -262,3 +284,12 @@ If you don't have a TV to test on, or the change affects TVs you don't have, say
 ### Help by testing on your TV
 
 Some changes can only be checked on TVs the maintainers don't have, such as newer or less common models. If you have a rooted LG TV, you can help without writing any code: pull requests and issues labelled [testers wanted](https://github.com/rorygallagher2024/glasshouse/labels/testers%20wanted) say what to run and what to send back.
+
+## Fork appearance
+
+This fork uses a tvOS-inspired Liquid Glass layer only on Glasshouse Home on
+the TV. Keep its styles separate from upstream styles. The web dashboard and
+TV settings dashboard retain upstream styling.
+For official updates, use the [merge helper](development/FORK-UI.md#merge-an-official-update)
+and review the appearance before committing. A changed theme baseline must be
+intentional; never refresh it to hide a merge regression.

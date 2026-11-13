@@ -66,6 +66,7 @@
     <button type="button" role="tab" data-tab="metrics"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2-5 4 10 2-5h6"/></svg><span data-t="tab.metrics">Metrics</span></button>
     <button type="button" role="tab" data-tab="apps"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5"/><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5"/><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5"/></svg><span data-t="tab.apps">Apps</span></button>
     <button type="button" role="tab" data-tab="home" id="tab-btn-home" hidden><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-6.5 8 6.5"/><path d="M6.5 9.5V19h11V9.5"/><path d="M10.5 19v-5h3v5"/></svg><span data-t="tab.home">Home</span></button>
+    <button type="button" role="tab" data-tab="ambient" id="tab-btn-ambient" hidden><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="7" width="12" height="10" rx="1.5"/><path d="M3 8v8M21 8v8M8 4h8M8 20h8"/></svg><span data-t="adv.ambient">Ambient Light</span></button>
     <button type="button" role="tab" data-tab="privacy"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7 3v5.5c0 4.4-3 8-7 9.5-4-1.5-7-5.1-7-9.5V6z"/></svg><span data-t="tab.privacy">Privacy</span></button>
     <button type="button" role="tab" data-tab="oledcare" id="tab-btn-oledcare" hidden><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="12" rx="1.5"/><path d="M8 20h8M12 8.5v5M9.5 11h5"/></svg><span data-t="tab.oledCare">OLED Care</span></button>
     <button type="button" role="tab" data-tab="game" id="tab-btn-game" hidden><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 8h10a4 4 0 0 1 4 4v1.5a3 3 0 0 1-5.4 1.8L14.5 14h-5l-1.1 1.3A3 3 0 0 1 3 13.5V12a4 4 0 0 1 4-4z"/><path d="M7.5 11v2.5M6.25 12.25h2.5M16 12h.01"/></svg><span data-t="tab.game">Game</span></button>
@@ -75,7 +76,7 @@
     <button type="button" role="tab" data-tab="advanced"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span data-t="tab.system">System</span></button>
     <div class="nav-rule" role="presentation"></div>
     <button type="button" role="tab" data-tab="servicemenu" id="tab-btn-servicemenu" hidden><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 9h6M9 13h6M9 17h3"/></svg><span data-t="tab.serviceMenu">Service menu</span></button>
-    <button type="button" role="tab" data-tab="mqtt"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M8 11l8-4M8 13l8 4"/></svg><span translate="no">MQTT</span></button>
+    <button type="button" role="tab" data-tab="mqtt"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2.2"/><circle cx="18" cy="6" r="2.2"/><circle cx="18" cy="18" r="2.2"/><path d="M8 11l8-4M8 13l8 4"/></svg><span translate="no">HA &amp; MQTT</span></button>
     <button type="button" role="tab" data-tab="server"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="4" width="16" height="7" rx="1.5"/><rect x="4" y="13" width="16" height="7" rx="1.5"/><path d="M8 7.5h.01M8 16.5h.01"/></svg><span data-t="tab.server">Server</span></button>
     <button type="button" role="tab" data-tab="tools"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4.5" width="18" height="15" rx="2"/><path d="M7 10l3 2.5L7 15M12.5 15h4"/></svg><span data-t="tab.tools">Tools</span></button>
   </nav>
@@ -192,7 +193,7 @@
 
     <div class="grp-sec" id="remoteblock" data-col="2" hidden>
       <div class="grp"><span data-t="metrics.remote">Magic remote</span><span class="pill idle" id="remote-pill" data-t="metrics.remote.standby">Standby</span></div>
-      <div id="remote-battery">
+      <div>
         <div class="lbl" data-t="metrics.battery">Battery</div>
         <div class="n num" style="margin-top:10px"><span id="remote-pct">&mdash;</span><em>%</em></div>
         <div class="track" style="margin-top:16px;margin-bottom:14px;max-width:220px"><b id="remote-gauge-fill" style="width:0%"></b></div>
@@ -201,6 +202,7 @@
         <div class="remote-meta-row" id="remote-model-row"><span class="remote-meta-lbl" data-t="metrics.remote.modelLabel">Model:</span> <span class="remote-meta-val" id="remote-model-val"></span></div>
         <div class="remote-meta-row" id="remote-fw-row"><span class="remote-meta-lbl" data-t="metrics.remote.firmwareLabel">Firmware:</span> <span class="remote-meta-val" id="remote-fw-val"></span></div>
         <div class="remote-meta-row" id="remote-signal-row"><span class="remote-meta-lbl" data-t="metrics.remote.signalLabel">Signal Strength:</span> <span class="remote-meta-val" id="remote-signal-val"></span></div>
+        <div class="remote-meta-row" id="remote-read-row" hidden><span class="remote-meta-lbl" data-t="metrics.remote.batteryReadLabel">Last read:</span> <span class="remote-meta-val" id="remote-read-val"></span></div>
       </div>
     </div>
 
@@ -298,6 +300,23 @@
       <div class="btns" id="inputs"></div>
     </div>
 
+    <div class="set" id="control-playback"><div class="lbl" data-t="ctl.playback">Playback</div>
+      <div class="playback-btns">
+        <button onclick="sendCommand('media','rewind')" data-t="ctl.rewind">Rewind</button>
+        <button onclick="sendCommand('media','playPause')" data-t="ctl.playPause">Play / Pause</button>
+        <button onclick="sendCommand('media','stop')" data-t="ctl.stop">Stop</button>
+        <button onclick="sendCommand('media','fastForward')" data-t="ctl.fastForward">Fast Fwd</button>
+      </div>
+
+      <div class="set" id="control-ambient" hidden>
+        <div class="lbl" data-t="adv.ambient">Ambient Light</div>
+        <div class="btns">
+          <button type="button" id="ctl_huesync" onclick="toggleHuesync()" aria-pressed="false" hidden><span data-t="adv.huesync.title">Hue Sync</span> &middot; <span id="ctl_huesync_state">&mdash;</span></button>
+          <button type="button" id="ctl_piccap" onclick="togglePiccap()" aria-pressed="false" hidden><span data-t="ambient.piccap.title">PicCap</span> &middot; <span id="ctl_piccap_state">&mdash;</span></button>
+        </div>
+      </div>
+    </div>
+
     <div class="set" data-col="0"><div class="lbl"><span data-t="ctl.volume">Volume</span> &middot; <span id="vol" class="num">&mdash;</span></div>
       <div class="vol-row" id="vol-row">
         <div class="vol-wrap" id="vol-wrap" role="group" aria-label="Volume" data-t-aria-label="ctl.volume">
@@ -309,15 +328,6 @@
           <button onclick="sendCommand('volumeStep',1)" aria-label="Volume up" data-t-aria-label="ctl.volumeUp" translate="no">+</button>
         </div>
         <button id="mute" onclick="toggleMute()" data-t="ctl.mute">Mute</button>
-      </div>
-    </div>
-
-    <div class="set"><div class="lbl" data-t="ctl.playback">Playback</div>
-      <div class="playback-btns">
-        <button onclick="sendCommand('media','rewind')" data-t="ctl.rewind">Rewind</button>
-        <button onclick="sendCommand('media','playPause')" data-t="ctl.playPause">Play / Pause</button>
-        <button onclick="sendCommand('media','stop')" data-t="ctl.stop">Stop</button>
-        <button onclick="sendCommand('media','fastForward')" data-t="ctl.fastForward">Fast Fwd</button>
       </div>
     </div>
 
@@ -340,6 +350,19 @@
           <button onclick="sendCommand('rcu','settings')" data-rcu="settings" data-t="ctl.settings">Settings</button>
         </div>
         <p class="sub dpad-keys" data-t="ctl.dpad.keys">On a keyboard: the arrows, Enter for OK, Esc or Backspace for Back, H for Home, M for Settings, Space to play or pause, K to mute.</p>
+      </div>
+    </details>
+
+    <details class="disc" id="disc-pointer" data-col="0" hidden>
+      <summary><span data-t="ctl.pointer">Pointer</span> <span class="cur" data-t="ctl.pointer.sub">Move the TV cursor</span></summary>
+
+      <div class="set">
+        <div class="pointer-pad" id="pointer-pad" role="group" aria-label="Pointer" data-t-aria-label="ctl.pointer">
+          <span data-t="ctl.pointer.hint">Slide to move. Tap to click. Use the wheel to scroll.</span>
+        </div>
+        <div class="btns">
+          <button type="button" id="pointer-click" data-t="ctl.pointer.click">Click</button>
+        </div>
       </div>
     </details>
 
@@ -608,6 +631,71 @@
   </details>
 </section>
 
+<section class="priv panel" id="ambientpane" role="tabpanel" hidden>
+  <div class="lbl" data-t="adv.ambient">Ambient Light</div>
+  <div class="sub" id="ambient-empty" hidden data-t="ambient.none">No ambient light integrations found.</div>
+  <div id="ambient-huesync" hidden>
+    <div class="pv-sec" data-t="adv.huesync.title">Hue Sync</div>
+    <div class="prot-table">
+      <div class="prot-row" id="row-huesync" hidden>
+        <div class="prot-main">
+          <div class="prot-title" data-t="adv.huesync">Hue Sync Enabled</div>
+          <div class="prot-desc" data-t="adv.huesync.desc">Starts or stops streaming screen colour data to the selected entertainment area for ambient light.</div>
+        </div>
+        <div class="prot-status"><button type="button" class="pill idle" id="btn_huesync" onclick="toggleHuesync()">&mdash;</button></div>
+      </div>
+    </div>
+    <div id="huesync-settings" hidden>
+    <div class="prot-table">
+      <div class="prot-row" id="row-huesync-brightness" hidden>
+        <label class="prot-main" for="huesync-brightness" data-t="adv.huesync.brightness">Brightness</label>
+        <div class="prot-status"><input class="pill-sel" type="number" min="0" max="100" step="1" id="huesync-brightness" onchange="changeHuesyncSetting(this)"></div>
+      </div>
+      <div class="prot-row" id="row-huesync-intensity" hidden>
+        <label class="prot-main" for="huesync-intensity" data-t="adv.huesync.intensity">Intensity</label>
+        <div class="prot-status"><select class="pill-sel" id="huesync-intensity" onchange="changeHuesyncSetting(this)"></select></div>
+      </div>
+      <div class="prot-row" id="row-huesync-sync_mode" hidden>
+        <label class="prot-main" for="huesync-sync_mode" data-t="adv.huesync.syncmode">Synchronization mode</label>
+        <div class="prot-status"><select class="pill-sel" id="huesync-sync_mode" onchange="changeHuesyncSetting(this)"></select></div>
+      </div>
+      <div class="prot-row" id="row-huesync-current_ec" hidden>
+        <label class="prot-main" for="huesync-current_ec" data-t="adv.huesync.currentec">Entertainment area</label>
+        <div class="prot-status"><select class="pill-sel" id="huesync-current_ec" onchange="changeHuesyncSetting(this)"></select></div>
+      </div>
+      <div class="prot-row" id="row-huesync-background_lightning_video" hidden>
+        <label class="prot-main" for="huesync-background_lightning_video" data-t="adv.huesync.backgroundlightningvideo">Background light (video)</label>
+        <div class="prot-status"><button type="button" class="pill idle" id="huesync-background_lightning_video" onclick="changeHuesyncSetting(this)" aria-pressed="false">&mdash;</button></div>
+      </div>
+      <div class="prot-row" id="row-huesync-background_lightning_games" hidden>
+        <label class="prot-main" for="huesync-background_lightning_games" data-t="adv.huesync.backgroundlightninggames">Background light (game)</label>
+        <div class="prot-status"><button type="button" class="pill idle" id="huesync-background_lightning_games" onclick="changeHuesyncSetting(this)" aria-pressed="false">&mdash;</button></div>
+      </div>
+      <div class="prot-row" id="row-huesync-auto_start" hidden>
+        <label class="prot-main" for="huesync-auto_start" data-t="adv.huesync.autostart">Automatic start</label>
+        <div class="prot-status"><button type="button" class="pill idle" id="huesync-auto_start" onclick="changeHuesyncSetting(this)" aria-pressed="false">&mdash;</button></div>
+      </div>
+      <div class="prot-row" id="row-huesync-auto_start_notification" hidden>
+        <label class="prot-main" for="huesync-auto_start_notification" data-t="adv.huesync.autostartnotification">Automatic start notification</label>
+        <div class="prot-status"><button type="button" class="pill idle" id="huesync-auto_start_notification" onclick="changeHuesyncSetting(this)" aria-pressed="false">&mdash;</button></div>
+      </div>
+    </div>
+    </div>
+  </div>
+  <div id="ambient-piccap" hidden>
+    <div class="pv-sec adv-sec" data-t="ambient.piccap.title">PicCap</div>
+    <div class="prot-table">
+      <div class="prot-row" id="row-piccap" hidden>
+        <div class="prot-main">
+          <div class="prot-title" data-t="adv.piccap">PicCap Enabled</div>
+          <div class="prot-desc" data-t="adv.piccap.desc">Starts or stops screen capture for Hyperion or HyperHDR to provide ambient light.</div>
+        </div>
+        <div class="prot-status"><button type="button" class="pill idle" id="btn_piccap" onclick="togglePiccap()">&mdash;</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
 <section class="priv panel" id="advpane" role="tabpanel" hidden>
   <div class="lbl" data-t="tab.system">System</div>
   <div class="pv-sec" data-t="adv.powerStandby">Power &amp; standby</div>
@@ -648,6 +736,13 @@
       </div>
       <div class="prot-status"><select class="pill-sel" id="sel_aroff" aria-label="Nightly power-down hours" data-t-aria-label="adv.nightlyOff.hours"
         onchange="sendCommand('alwaysReadyOffStart', this.value)"></select></div>
+    </div>
+    <div class="prot-row" id="row-nightlyrefresh" hidden>
+      <div class="prot-main">
+        <div class="prot-title" data-t="adv.nightlyRefresh">Nightly refresh reboot</div>
+        <div class="prot-desc" data-t="adv.nightlyRefresh.desc">Aligns the TV's 24-hour maintenance reboot with your nightly power-down window. Prevents a bug in LG's software where rebooting during the day causes the TV to power off completely four hours later.</div>
+      </div>
+      <div class="prot-status"><button type="button" class="pill idle" id="btn_nightlyrefresh" onclick="toggleNightlyRefresh()">&mdash;</button></div>
     </div>
     <div class="prot-row" id="row-wol" hidden>
       <div class="prot-main">
@@ -778,25 +873,6 @@
     </div>
   </div>
 
-  <!-- Only where PicCap or Hue Sync are installed. -->
-  <div class="pv-sec adv-sec" id="adv-piccap" hidden data-t="adv.ambient">Ambient light</div>
-  <div class="prot-table">
-    <div class="prot-row" id="row-piccap" hidden>
-      <div class="prot-main">
-        <div class="prot-title" data-t="adv.piccap">PicCap capture</div>
-        <div class="prot-desc" data-t="adv.piccap.desc">Sends what is on screen to PicCap's Hyperion server, which drives an ambient light behind the TV. Off stops the capture, and the light with it.</div>
-      </div>
-      <div class="prot-status"><button type="button" class="pill idle" id="btn_piccap" onclick="togglePiccap()">&mdash;</button></div>
-    </div>
-    <div class="prot-row" id="row-huesync" hidden>
-      <div class="prot-main">
-        <div class="prot-title" data-t="adv.huesync">Hue Sync streaming</div>
-        <div class="prot-desc" data-t="adv.huesync.desc">Starts and stops the colour stream the Hue Sync app sends to a Philips Ambience light. Off stops the stream, and the light with it.</div>
-      </div>
-      <div class="prot-status"><button type="button" class="pill idle" id="btn_huesync" onclick="toggleHuesync()">&mdash;</button></div>
-    </div>
-  </div>
-
   <div class="pv-sec adv-sec" id="adv-hdmi" hidden data-t="adv.hdmi">HDMI inputs</div>
   <div class="hdmi-in" id="adv-lgs-hdmi" data-reload="loadAdvSettings"></div>
 
@@ -858,8 +934,48 @@
   <div id="ss-list" class="ss-list"></div>
   <div class="ss-side">
   <div class="ss-level-row" id="ss-level-row" hidden>
-    <div class="ss-level-lbl" data-t="ss.brightness">Brightness</div>
-    <div class="btns" id="ss-level"></div>
+    <div class="ss-level-lbl"><span data-t="ss.brightness">Brightness</span> &middot; <span id="ss-bright-lbl" class="num">&mdash;</span></div>
+    <div class="vol-row ss-bright-row">
+      <div class="vol-wrap full" id="ss-bright-wrap" role="group" aria-label="Brightness" data-t-aria-label="ss.brightness">
+        <div class="vol-fill" id="ss-bright-fill"></div>
+        <input type="range" id="ss-bright-slider" min="5" max="100" step="5" value="65" aria-label="Brightness" data-t-aria-label="ss.brightness">
+      </div>
+    </div>
+  </div>
+
+  <div class="ss-level-row" id="ss-choice-row" hidden>
+    <div class="ss-level-lbl" id="ss-choice-lbl"></div>
+    <!-- A list of its own rather than a select: a select's open list takes no
+         headings worth the name, and some screen savers have hundreds of options. -->
+    <div class="ss-pick" id="ss-pick">
+      <button type="button" class="pill-sel ss-pick-btn" id="ss-choice" aria-haspopup="listbox" aria-expanded="false"
+        aria-labelledby="ss-choice-lbl ss-choice" onclick="ssPickOpen(q('ss-pick-list').hidden)" onkeydown="ssPickKey(event)">&mdash;</button>
+      <div class="ss-pick-list" id="ss-pick-list" role="listbox" aria-labelledby="ss-choice-lbl" tabindex="-1" hidden
+        onkeydown="ssPickKey(event)"></div>
+    </div>
+  </div>
+
+  <div class="ss-level-row" id="ss-color-row" hidden>
+    <div class="ss-level-lbl" id="ss-color-lbl" data-t="ss.valueColor">Value colour</div>
+    <select class="pill-sel ss-sel" id="ss-color" aria-labelledby="ss-color-lbl ss-color" onchange="pickSsColor(this.value)"></select>
+  </div>
+
+  <div class="ss-level-row" id="ss-entities-row" hidden>
+    <div class="ss-level-lbl" data-t="ss.entities">Home Assistant Entities</div>
+    <div id="ss-entities-list"></div>
+    <div class="pv-sub" id="ss-entities-note" style="margin-top:8px"></div>
+    <div id="ss-entities-setup" hidden style="margin-top:8px">
+      <button type="button" onclick="openHaSettings()" data-t="ss.openMqtt">Open HA and MQTT settings</button>
+    </div>
+  </div>
+
+  <div class="ss-level-row" id="ss-pool-row" hidden>
+    <div class="ss-level-lbl"><span data-t="ss.poolTitle">Included in rotation</span> &middot; <span id="ss-pool-count" class="num">&mdash;</span></div>
+    <div class="ss-pool-actions">
+      <button type="button" class="ss-pool-btn" id="ss-pool-all" onclick="ssPoolSelectAll(true)" data-t="ss.poolSelectAll">Select all</button>
+      <button type="button" class="ss-pool-btn" id="ss-pool-none" onclick="ssPoolSelectAll(false)" data-t="ss.poolDeselectAll">Deselect all</button>
+    </div>
+    <div class="ss-pool-box" id="ss-pool-box"></div>
   </div>
 
   <div class="ss-level-row">
@@ -1033,6 +1149,11 @@
       <summary><span data-t="apps.remoteKeys">Remote keys</span> <span class="cur" id="apps-rk-summary"></span></summary>
       <div class="pv-sub" data-t="apps.remoteKeys.desc">What a key on the remote does: as LG has it, nothing, or opening an app or input instead. A change applies straight away and lasts across reboots. A key set here is taken before any app sees it, so an app that uses the key itself, such as YouTube with Guide, no longer gets it. The keys listed are the ones this TV handles; a given remote may not have them all.</div>
       <div id="apps-rk-list"></div>
+      <div id="apps-rk-bar" hidden>
+        <div class="rk-grp" data-t="apps.inputBar">Input bar</div>
+        <div class="pv-sub" data-t="apps.inputBar.desc">The inputs the bar steps through, in Glasshouse Home&rsquo;s order. Hiding one here hides it on Glasshouse Home too.</div>
+        <div class="prot-table" id="apps-rk-bar-list"></div>
+      </div>
     </details>
   </div>
 
@@ -1054,6 +1175,24 @@
       <div class="prot-table" id="apps-services-list">
         <div class="sub" style="padding:16px 0" data-t="apps.loadingServices">Loading background services&hellip;</div>
       </div>
+    </details>
+  </div>
+
+  <div class="apps-grp" id="apps-grp-net">
+    <div class="apps-grp-h" data-t="apps.group.net">Network</div>
+    <div class="pv-sub apps-grp-d" data-t="apps.group.net.desc">How apps reach the internet.</div>
+
+    <details class="pv-d" id="disc-appdns" hidden>
+      <summary><span data-t="apps.dns">DNS app configuration</span> <span class="cur" id="apps-dns-summary"></span></summary>
+      <div class="pv-sub" data-t="apps.dns.desc">An app here can look names up with DNS servers of its own, such as
+        1.1.1.1 or a Pi-hole, while everything else on the TV keeps using the TV's. A change takes effect the
+        next time the app starts. Only apps LG runs in a sandbox of their own are listed, once they have been
+        opened; web apps share one process and cannot have their own.</div>
+      <div class="pv-sub" data-t="apps.dns.doh.desc">Instead of addresses, an app can be given one https:// address for
+        DNS over HTTPS, such as https://dns.nextdns.io/ followed by a NextDNS profile ID. Glasshouse then answers
+        the app's lookups on the TV and sends each on over HTTPS, so the app finds nothing while Glasshouse is not
+        running, as in the first minute after the TV starts.</div>
+      <div class="prot-table" id="apps-dns-list"></div>
     </details>
   </div>
 </section>
@@ -1160,13 +1299,6 @@
   <div class="prot-table home-custom-table">
     <div class="prot-row home-gh-row home-show-row" hidden>
       <div class="prot-main">
-        <div class="prot-title" data-t="home.showClock">Clock and date</div>
-        <div class="prot-desc" data-t="home.showClockDesc">At the top of Glasshouse Home. Switched off, the space stays empty.</div>
-      </div>
-      <div class="prot-status"><button type="button" class="pill idle" id="home-show-clock" onclick="homeShow('showClock')">&mdash;</button></div>
-    </div>
-    <div class="prot-row home-gh-row home-show-row" hidden>
-      <div class="prot-main">
         <div class="prot-title" data-t="home.showLast">Last watched</div>
         <div class="prot-desc" data-t="home.showLastDesc">At the top of Glasshouse Home and on the input it was on: what the TV last showed.</div>
       </div>
@@ -1194,6 +1326,27 @@
       </div>
       <div class="prot-status"><button type="button" class="pill idle" id="home-show-tv-logos" onclick="homeShow('showTvLogos')">&mdash;</button></div>
     </div>
+    <div class="prot-row home-gh-row home-show-row" hidden>
+      <div class="prot-main">
+        <div class="prot-title" data-t="home.weather">Weather</div>
+        <div class="prot-desc" data-t="home.weatherDesc">Next to the clock: the weather Home Assistant sends, or the weather for a place you choose, from Open-Meteo.</div>
+      </div>
+      <div class="prot-status"><select class="pill-sel" id="home-weather-sel" onchange="homeWeatherSource(this.value)" aria-label="Weather" data-t-aria-label="home.weather">
+        <option value="off" data-t="common.off">Off</option>
+        <option value="ha" data-t="home.weather.fromHa">From Home Assistant</option>
+        <option value="internet" data-t="home.weather.fromInternet">From the internet</option>
+      </select></div>
+    </div>
+    <div class="home-weather-place" id="home-weather-place" hidden>
+      <div class="sub" data-t="home.weather.placeDesc">Glasshouse asks Open-Meteo for the weather at this place every 30 minutes while the TV is on. Nothing else is sent.</div>
+      <form class="toast-form" onsubmit="event.preventDefault();homeWeatherSearch();">
+        <input type="search" id="home-weather-q" maxlength="80" autocomplete="off" placeholder="Town or city" data-t-placeholder="home.weather.placeholder">
+        <button type="submit" id="home-weather-go" data-t="home.weather.search">Search</button>
+      </form>
+      <div class="home-weather-results" id="home-weather-results"></div>
+      <div class="sub" id="home-weather-chosen" role="status"></div>
+      <div class="sub home-weather-credit" data-t="home.weather.credits">Weather data by Open-Meteo.com. Location data based on GeoNames.</div>
+    </div>
     <div class="prot-row home-gh-row" id="home-picture-row" hidden>
       <div class="prot-main">
         <div class="prot-title" data-t="home.picture">Picture details</div>
@@ -1203,15 +1356,28 @@
     </div>
   </div>
   </div>
+  <div class="home-group" id="home-g-widgets">
+    <div class="pv-g" data-t="home.widgets.title">Top widgets</div>
+    <div class="prot-row home-gh-row"><div class="prot-main"><div class="prot-desc" id="home-widget-summary"></div></div>
+      <div class="prot-status"><button type="button" id="home-widget-manage" class="pill idle" onclick="homeWidgetManage()" data-t="home.widgets.manage">Manage widgets</button></div>
+    </div>
+  </div>
   <div class="home-group" id="home-g-preview">
   <div class="pv-g" data-t="home.group.preview">Live preview</div>
   <div class="prot-table home-custom-table">
     <div class="prot-row home-gh-row" id="home-preview-row" hidden>
       <div class="prot-main">
         <div class="prot-title" data-t="home.livePreview">Live preview</div>
-        <div class="prot-desc" data-t="home.livePreviewDesc">A silent live picture of the input or channel in focus on Glasshouse Home, in the top right, with the picture details beside it. It switches the TV to that input behind Home without waking anything, and a channel shown this way does not become the last channel.</div>
+        <div class="prot-desc" data-t="home.livePreviewDesc">A live picture of the input or channel in focus on Glasshouse Home, in the top right, with the picture details beside it. It switches the TV to that input behind Home without waking anything, and a channel shown this way does not become the last channel.</div>
       </div>
       <div class="prot-status"><button type="button" class="pill idle" id="home-preview" onclick="homeLivePreview()">&mdash;</button></div>
+    </div>
+    <div class="prot-row home-gh-row" id="home-preview-sound-row" hidden>
+      <div class="prot-main">
+        <div class="prot-title" data-t="home.previewSound">Preview sound</div>
+        <div class="prot-desc" data-t="home.previewSoundDesc">The preview plays the sound of the input or channel it shows, rather than none. Switching it changes a preview already playing.</div>
+      </div>
+      <div class="prot-status"><button type="button" class="pill idle" id="home-preview-sound" onclick="homePreviewOption('previewSound')">&mdash;</button></div>
     </div>
     <div class="prot-row home-gh-row" id="home-preview-always-row" hidden>
       <div class="prot-main">
@@ -1357,8 +1523,16 @@
   <div class="sub" data-t="home.bg.intro">What is behind Glasshouse Home: nothing, pictures that change with the part of the day, or a moving background.</div>
   <div class="btns wall-choice" id="home-bg-kind"></div>
   <div id="home-bg-pictures">
-    <div class="sub" data-t="home.wall.introPictures">A picture for each part of the day: one of the picture sets, or your own.</div>
+    <div class="sub" id="home-wall-intro"></div>
     <div class="btns wall-choice" id="home-wall-choice"></div>
+    <!-- Your own, shuffled: any number of pictures, one at a time in a random order -->
+    <div id="home-wall-shuffle" hidden>
+      <div class="shuffle-every"><span data-t="home.wall.shuffleEvery">A new picture every</span>
+        <select class="pill-sel" id="home-shuffle-minutes" aria-label="A new picture every" data-t-aria-label="home.wall.shuffleEvery"
+          onchange="homeShuffleMinutes(this.value)"></select></div>
+      <div class="wall-cards" id="home-shuffle"></div>
+      <input type="file" id="home-shuffle-file" accept="image/jpeg,image/png,image/webp" multiple hidden onchange="homeShufflePicked(this)">
+    </div>
     <!-- The day as Glasshouse Home shows it: each part's picture across its hours, and where the day is now -->
     <div class="wall-day" id="home-wall-day"></div>
     <div class="wall-cards" id="home-walls"></div>
@@ -1529,7 +1703,11 @@
 </section>
 
 <section class="priv panel" id="mqttpane" role="tabpanel" hidden>
-  <div class="lbl" translate="no">MQTT &amp; Home Assistant</div>
+  <div class="lbl" translate="no">HA &amp; MQTT</div>
+
+  <div id="mqtt-section">
+  <div class="pv-h" style="margin-top:0" data-t="mqtt.section">MQTT bridge</div>
+  <div class="pv-sub" data-t="mqtt.section.desc">Control and observe this TV from Home Assistant or an MQTT client. Publishes TV telemetry, sensors, and settings to your broker and accepts remote commands.</div>
 
   <div class="cfg-cols">
   <div class="cfg-side">
@@ -1658,7 +1836,7 @@
     </div>
   </div>
 
-  <div class="pv-h" data-t="mqtt.entities">Home Assistant entities</div>
+  <div class="pv-h" data-t="mqtt.entities">Published TV entities</div>
   <div class="pv-sub" data-t="mqtt.entities.desc">Choose which entity categories are published over MQTT Discovery.
     Disabling an entity removes it cleanly from Home Assistant without leaving an orphaned state.</div>
 
@@ -1677,6 +1855,84 @@
     <span class="cfg-msg" id="cfg-msg"></span>
   </div>
   </div>
+  </div>
+  </div>
+
+  <div class="ha-api-section" id="ha-api-section">
+    <div class="pv-h" style="margin-top:0" data-t="ha.api">Home Assistant API</div>
+    <div class="pv-sub" data-t="ha.api.desc">Display live Home Assistant entities inside Glasshouse screen savers (such as Ambient). Connects straight to Home Assistant over HTTP/HTTPS without using MQTT, and saves without restarting.</div>
+
+    <div class="cfg-cols">
+      <div class="cfg-side">
+        <div class="cfg-toggles" style="margin-top:0">
+          <button type="button" id="cfg-ha-enabled" onclick="toggleHaEnabled()" data-t="ha.api">Home Assistant API</button>
+        </div>
+        <div class="sub" id="cfg-ha-enabled-note" style="margin-top:8px"></div>
+
+        <div class="mqtt-net" id="ha-net">
+          <div class="mqtt-net-header">
+            <span class="mqtt-net-title" data-t="mqtt.net.title">Connection</span>
+          </div>
+
+          <div class="mqtt-net-flow">
+            <div class="mqtt-net-node">
+              <div class="mqtt-net-ico" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="1.5"/><path d="M8 20h8M12 17v3"/></svg>
+              </div>
+              <div class="mqtt-net-body">
+                <div class="mqtt-net-name" id="ha-node-tv-name">&mdash;</div>
+                <div class="mqtt-net-sub" translate="no">Glasshouse</div>
+              </div>
+              <div class="mqtt-net-state">
+                <span class="mqtt-dot good" id="ha-dot-tv"></span>
+              </div>
+            </div>
+
+            <div class="mqtt-net-link">
+              <div class="mqtt-net-track">
+                <div class="mqtt-packet" id="ha-packet-read"></div>
+              </div>
+              <div class="mqtt-net-meta">
+                <span class="mqtt-net-metric" id="ha-net-metric">&mdash;</span>
+              </div>
+            </div>
+
+            <div class="mqtt-net-node" id="ha-node-server">
+              <div class="mqtt-net-ico" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="M3 11.5L12 4l9 7.5"/><path d="M5.5 9.5V20h13V9.5"/><circle cx="12" cy="14" r="2"/></svg>
+              </div>
+              <div class="mqtt-net-body">
+                <div class="mqtt-net-name" data-t="ha.net.server">Home Assistant</div>
+                <div class="mqtt-net-sub"><span id="ha-node-server-sub">&mdash;</span><span class="mqtt-tls-tag" id="ha-node-server-tls" hidden translate="no">HTTPS</span></div>
+              </div>
+              <div class="mqtt-net-state">
+                <span class="mqtt-dot idle" id="ha-dot-server"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cfg-main">
+        <div class="cfg-grid">
+          <div class="cfg-f">
+            <label for="cfg-ha-url" data-t="ha.url">Home Assistant address</label>
+            <input type="text" id="cfg-ha-url" placeholder="http://192.168.1.10:8123" translate="no" autocomplete="off" spellcheck="false">
+            <div class="hint" data-t="ha.url.hint">Address and port of your Home Assistant instance.</div>
+          </div>
+          <div class="cfg-f">
+            <label for="cfg-ha-token" data-t="ha.token">Long-Lived Access Token</label>
+            <input type="password" id="cfg-ha-token" autocomplete="new-password">
+            <div class="hint" id="cfg-ha-token-hint" data-t="ha.token.hint">From your Home Assistant profile &rarr; Long-Lived Access Tokens.</div>
+          </div>
+        </div>
+        <div class="cfg-save" style="margin-top:14px">
+          <button type="button" id="cfg-ha-save-btn" onclick="saveHaSettings()" data-t="ha.save">Save</button>
+          <button type="button" id="cfg-ha-test-btn" onclick="testHaConnection()" data-t="ha.test">Test connection</button>
+          <span class="cfg-msg" id="cfg-ha-msg" role="status" aria-live="polite"></span>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
@@ -1842,6 +2098,28 @@
             <div class="sub" id="ssh-msg" hidden></div>
           </div>
         </div>
+        <div class="prot-row" id="exp-pointer-row" hidden>
+          <div class="prot-main">
+            <div class="prot-title" data-t="server.experimental.pointer">Pointer input</div>
+            <div class="prot-desc" data-t="server.experimental.pointer.short">Adds a trackpad under Control for moving, clicking and scrolling the TV cursor.</div>
+            <div id="exp-pointer-settings" hidden>
+              <div class="pointer-setting">
+                <label for="exp-pointer-transport" data-t="ctl.pointer.transport">Connection</label>
+                <select class="pill-sel" id="exp-pointer-transport">
+                  <option value="websocket" translate="no">WebSocket</option>
+                  <option value="http" translate="no">HTTP</option>
+                </select>
+              </div>
+              <div class="prot-desc" data-t="server.experimental.pointer.transport.desc">WebSocket sends without waiting for HTTP answers and opens only while Pointer is open. HTTP sends separate requests and may feel less smooth.</div>
+              <div class="pointer-setting">
+                <label for="exp-pointer-rate" data-t="server.experimental.pointer.rate">Update rate</label>
+                <select class="pill-sel" id="exp-pointer-rate"></select>
+              </div>
+              <div class="prot-desc" data-t="server.experimental.pointer.rate.desc">How often the dashboard sends movement batches. Lower rates reduce TV and network work; higher rates can feel smoother. The default and recommended rate is 120 updates per second.</div>
+            </div>
+          </div>
+          <div class="prot-status"><button type="button" class="pill idle" id="exp-pointer" onclick="toggleExpPointer()">&mdash;</button></div>
+        </div>
       </div>
 
       <div class="pv-g" data-t="server.experimental">Experimental features</div>
@@ -1867,6 +2145,14 @@
             <div class="prot-desc" data-t="server.experimental.screensaver.short">Allows the dashboard's own screen savers on webOS 12 and later, on the Screensaver tab.</div>
           </div>
           <div class="prot-status"><button type="button" class="pill idle" id="exp-screensaver" onclick="toggleExpScreensaver()">&mdash;</button></div>
+        </div>
+        <div class="prot-row" id="exp-inputbar-row" hidden>
+          <div class="prot-main">
+            <div class="prot-title" data-t="server.experimental.inputBar">Input bar</div>
+            <div class="prot-desc" data-t="server.experimental.inputBar.short">Offers the input bar under Remote keys on the Apps tab: a strip of the HDMI inputs over the picture, stepped through with the remote&rsquo;s Input key.</div>
+            <div class="prot-desc" data-t="server.experimental.inputBar.warn">Tried on webOS 4, 6 and 9 only. Switching it off sets any key using it back to LG&rsquo;s and removes its app.</div>
+          </div>
+          <div class="prot-status"><button type="button" class="pill idle" id="exp-inputbar" onclick="toggleExpInputBar()">&mdash;</button></div>
         </div>
       </div>
     </details>
@@ -2016,7 +2302,66 @@
   </div>
 </div>
 
+<dialog id="home-widget-manager" aria-labelledby="home-widget-manager-title" oncancel="event.preventDefault(); homeWidgetClose()">
+  <header class="home-widget-manager-head"><h2 id="home-widget-manager-title" data-t="home.widgets.manage">Manage widgets</h2>
+    <button type="button" class="pill idle" onclick="homeWidgetClose()" data-t="common.close">Close</button></header>
+  <div class="home-widget-tabs" role="tablist" aria-label="Manage widgets" data-t-aria-label="home.widgets.manage" onkeydown="homeWidgetTabKey(event)">
+    <button type="button" role="tab" id="home-widget-tab-widgets" aria-controls="home-widget-editors" aria-selected="true" onclick="homeWidgetShowTab('widgets')" data-t="home.widgets.tabWidgets">Widgets</button>
+    <button type="button" role="tab" id="home-widget-tab-layout" aria-controls="home-widget-layout" aria-selected="false" tabindex="-1" onclick="homeWidgetShowTab('layout')" data-t="home.group.layout">Layout</button>
+    <button type="button" role="tab" id="home-widget-tab-store" aria-controls="home-widget-store" aria-selected="false" tabindex="-1" onclick="homeWidgetShowTab('store')" data-t="home.widgets.tabStore">Store</button>
+  </div>
+  <p class="prot-desc" id="home-widget-manager-note" role="status"></p>
+  <p class="prot-desc home-widget-error" data-widget-error role="alert" hidden></p>
+  <div class="home-widget-manager-body">
+    <section id="home-widget-editors" role="tabpanel" aria-labelledby="home-widget-tab-widgets">
+      <div id="home-widget-list" role="group" aria-label="Widgets" data-t-aria-label="home.widgets.tabWidgets"></div>
+      <div id="home-widgets"></div>
+    </section>
+    <section id="home-widget-layout" role="tabpanel" aria-labelledby="home-widget-tab-layout" hidden></section>
+    <section id="home-widget-store" role="tabpanel" aria-labelledby="home-widget-tab-store" hidden>
+      <p class="prot-desc" data-t="home.store.privacy">Opening the store contacts GitHub or jsDelivr. Search and filters stay on this device; widget settings are not sent.</p>
+      <div class="home-widget-fields">
+        <label><span data-t="home.store.search">Search widgets</span><input id="home-store-search" type="search" maxlength="100" oninput="renderHomeWidgetStore()"></label>
+        <label><span data-t="home.store.category">Category</span><select class="pill-sel" id="home-store-category" onchange="renderHomeWidgetStore()">
+          <option value="" data-t="home.store.all">All categories</option>
+          <option value="personal" data-t="home.store.personal">Personal</option>
+          <option value="weather" data-t="home.widgets.weather">Weather</option>
+          <option value="tv" data-t="home.store.tv">TV statistics</option>
+        </select></label>
+        <label><input id="home-store-installed" type="checkbox" onchange="renderHomeWidgetStore()"><span data-t="home.store.installedOnly">Installed only</span></label>
+        <button type="button" class="pill idle" id="home-store-refresh" onclick="homeStoreBrowse()" data-t="home.store.refresh">Refresh catalogue</button>
+        <a class="pill idle" id="home-store-submit" href="https://github.com/rsm23/glasshouse/issues/new" target="_blank" rel="noopener" data-t="home.store.submit">Submit a widget</a>
+      </div>
+      <p class="prot-desc" id="home-store-note" role="status"></p>
+      <p class="prot-desc" id="home-store-count" aria-live="polite"></p>
+      <div id="home-store-results"></div>
+      <label class="home-widget-import"><span data-t="home.widgets.import">Import a widget (.json)</span>
+        <input id="home-widget-import" type="file" accept=".json,application/json" onchange="homeWidgetImport(this.files[0]); this.value = ''">
+      </label>
+      <p class="prot-desc" data-t="home.widgets.importHint">Import text widgets or component widgets with icons, charts and data. Imported widgets stay off until enabled.</p>
+      <a href="https://rorygallagher2024.github.io/glasshouse/development/WRITING-WIDGETS/" target="_blank" rel="noopener" data-t="home.widgets.guide">Widget format</a>
+    </section>
+  </div>
+</dialog>
+
+<dialog id="home-store-preview" aria-labelledby="home-store-preview-title">
+  <form method="dialog" class="home-store-dialog-close"><button type="submit" class="pill idle" data-t="common.close">Close</button></form>
+  <p class="prot-desc home-widget-error" data-widget-error role="alert" hidden></p>
+  <h2 id="home-store-preview-title"></h2>
+  <p class="prot-desc" id="home-store-preview-description"></p>
+  <p class="prot-desc" data-t="home.store.sample">Preview with sample data</p>
+  <div class="home-store-sample"><div id="home-store-sample-title" class="prot-title"></div><div id="home-store-sample-body"></div></div>
+  <form id="home-store-preview-form" oninput="homeStorePaintPreview()" onchange="homeStorePaintPreview()" onsubmit="event.preventDefault(); homeStoreInstall()">
+    <div id="home-store-preview-fields" class="home-widget-fields"></div>
+    <p class="prot-desc" id="home-store-preview-weather" data-t="home.store.weather">Uses the city and units selected under Weather. Turning this widget on permits weather requests.</p>
+    <p class="prot-desc" id="home-store-install-note" role="status"></p>
+    <button type="submit" class="pill idle" id="home-store-install" data-t="home.store.install">Install widget</button>
+  </form>
+</dialog>
+
 <script src="/assets/i18n.js"></script>
+<script src="/assets/widget-kit.js"></script>
+<script src="/assets/widget-layout.js"></script>
 <!-- The server puts these back inline as one script, in this order: see inlineUI in lib/routes.js. -->
 <script src="/assets/ui/core.js"></script>
 <script src="/assets/ui/theme.js"></script>
@@ -2034,6 +2379,12 @@
 <script src="/assets/ui/apps.js"></script>
 <script src="/assets/ui/install.js"></script>
 <script src="/assets/ui/home.js"></script>
+<script src="/assets/ui/home-widgets.js"></script>
+<script src="/assets/ui/widget-manager.js"></script>
+<script src="/assets/ui/home-football.js"></script>
+<script src="/assets/ui/home-calendar.js"></script>
+<script src="/assets/ui/widget-layout.js"></script>
+<script src="/assets/ui/widget-store.js"></script>
 <script src="/assets/ui/iptv.js"></script>
 <script src="/assets/ui/tvchannels.js"></script>
 <script src="/assets/ui/audio.js"></script>

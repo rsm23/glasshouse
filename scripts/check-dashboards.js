@@ -277,6 +277,132 @@ async function visitHomePicture(browser, base, problems) {
   } finally { await page.close(); }
 }
 
+// The weather badge: Home Assistant's last push or Open-Meteo's, brought by the heartbeat.
+async function visitHomeWeather(browser, base, problems) {
+  const page = await browser.newPage();
+  page.on('pageerror', e => problems.push('Home weather: ' + e.message));
+  const fail = what => problems.push('Home weather: ' + what);
+  const layout = { rows: ['app'], order: { app: [] }, hidden: { app: [] }, channels: [], hintSeen: true, searchHintSeen: true };
+  let weather = null, version = 1;
+  await page.route('**/api/home/**', route => {
+    const url = new URL(route.request().url());
+    const reply = body => route.fulfill({ json: body });
+    if (url.pathname.endsWith('/catalogue')) return reply({ ok: true, layout, layoutVersion: version,
+      apps: [{ id: 'app', title: 'App' }], devices: [], channels: [], sources: { channels: 0 }, order: { app: ['app', 'lg-home'] } });
+    if (url.pathname.endsWith('/weather')) return reply(weather ? Object.assign({ ok: true }, weather) : { ok: false });
+    if (url.pathname.endsWith('/guide')) return reply({ ok: true, guide: {} });
+    return reply({ ok: true, build: 'weather', layoutVersion: version, weather });
+  });
+  const beat = async () => {
+    const replied = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/beat');
+    await page.clock.fastForward(5000);
+    await replied;
+    await page.evaluate(() => 0);
+  };
+  const shown = () => page.evaluate(() => {
+    const w = document.getElementById('weather');
+    return w.className === 'none' ? null : { svg: !!w.querySelector('#wxIcon svg'), temp: document.getElementById('wxTemp').textContent,
+      city: document.getElementById('wxCity').textContent, cond: document.getElementById('wxCond').textContent };
+  });
+  try {
+    await page.clock.install();
+    await page.goto(base + '/assets/home.html');
+    await page.waitForSelector('.tile');
+    if (await shown()) fail('shown before anything was pushed');
+    weather = { condition: 'rainy', temp: 9.6, city: 'Glasgow' };
+    await beat();
+    const w = await shown();
+    if (!w || !w.svg || w.temp !== '10°' || w.city !== 'Glasgow' || w.cond !== 'Rainy') fail('a push was shown as ' + JSON.stringify(w));
+    weather = { condition: 'volcanic', temp: -2.4, city: null };
+    await beat();
+    const odd = await shown();
+    if (!odd || !odd.svg || odd.temp !== '-2°' || odd.cond !== '') fail('a condition Home Assistant does not name was shown as ' + JSON.stringify(odd));
+    weather = null;
+    await beat();
+    if (await shown()) fail('still shown once the heartbeat brought none');
+    // Open-Meteo's weather carries its credit, in the corner, gone with the weather.
+    const credit = () => page.evaluate(() => {
+      const c = document.getElementById('wxCredit');
+      return c.textContent && getComputedStyle(c).display !== 'none' ? c.textContent : '';
+    });
+    if (await credit()) fail('Home Assistant\'s weather credited to Open-Meteo');
+    weather = { condition: 'cloudy', temp: 9.7, city: 'Glasgow', source: 'internet' };
+    await beat();
+    const net = await shown();
+    if (!net || net.temp !== '10°' || net.cond !== 'Cloudy') fail('Open-Meteo\'s weather was shown as ' + JSON.stringify(net));
+    if (await credit() !== 'Weather data by Open-Meteo.com') fail('Open-Meteo\'s weather shown without its credit');
+    weather = null;
+    await beat();
+    if (await credit()) fail('the credit stayed once the weather went');
+  } catch (e) {
+    fail(e.message);
+  }
+  await page.close();
+}
+
+// The Home tab's Weather setting: the source, and a place found by name for
+// Open-Meteo. The search is answered here, so the check never reaches Open-Meteo.
+async function visitHomeWeatherSetting(browser, base, problems) {
+  const page = await browser.newPage();
+  page.on('pageerror', e => problems.push('Home weather setting: ' + e.message));
+  const fail = what => problems.push('Home weather setting: ' + what);
+  const layout = { rows: ['app'], order: { app: [] }, sort: { app: 'custom' }, hidden: { app: [] }, channels: [],
+    hintSeen: true, searchHintSeen: true, weather: 'ha', weatherPlace: null };
+  const saves = [], searches = [];
+  const glasgow = { name: 'Glasgow', admin: 'Scotland', country: 'United Kingdom', countryCode: 'GB', lat: 55.8652, lon: -4.2576 };
+  await page.route('**/api/home**', async route => {
+    const url = new URL(route.request().url());
+    let body;
+    if (url.pathname === '/api/home') body = { ok: true, supported: { ok: true }, installed: true, enabled: true, active: true, writable: true, layout, history: true };
+    else if (url.pathname.endsWith('/catalogue')) body = { ok: true, apps: [], channels: [], devices: [], layout, order: { app: ['lg-home'] } };
+    else if (url.pathname.endsWith('/weather/places')) {
+      searches.push(url.searchParams.get('q'));
+      body = { ok: true, places: url.searchParams.get('q') === 'Glasgow' ? [glasgow] : [] };
+    } else if (url.pathname.endsWith('/layout')) {
+      const patch = route.request().postDataJSON();
+      saves.push(patch);
+      if (patch.weather) layout.weather = patch.weather;
+      if (patch.weatherPlace !== undefined) layout.weatherPlace = patch.weatherPlace;
+      body = { ok: true, layout: JSON.parse(JSON.stringify(layout)) };
+    } else body = { ok: true };
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
+  });
+  try {
+    await page.goto(base + '/?tab=home');
+    const sel = page.locator('#home-weather-sel');
+    await page.waitForFunction(() => { const s = document.getElementById('home-weather-sel'); return s && !s.disabled && s.offsetParent; });
+    if (await sel.inputValue() !== 'ha') fail('the source read ' + await sel.inputValue() + ' for Home Assistant');
+    if (await page.locator('#home-weather-place').isVisible()) fail('the place search shown for Home Assistant');
+    let saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
+    await sel.selectOption('internet');
+    await saved;
+    await page.locator('#home-weather-place').waitFor();
+    if (!/Search for your town/.test(await page.locator('#home-weather-chosen').textContent())) fail('no prompt to choose a place');
+    await page.locator('#home-weather-q').fill('Nowhere');
+    await page.locator('#home-weather-go').click();
+    await page.locator('#home-weather-results').getByText('No places found').waitFor();
+    await page.locator('#home-weather-q').fill('Glasgow');
+    await page.locator('#home-weather-q').press('Enter');
+    const pick = page.locator('#home-weather-results button');
+    await pick.first().waitFor();
+    if (await pick.first().textContent() !== 'Glasgow, Scotland, United Kingdom') fail('a place read ' + await pick.first().textContent());
+    saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
+    await pick.first().click();
+    await saved;
+    const last = saves[saves.length - 1];
+    if (last.weather !== 'internet' || !last.weatherPlace || last.weatherPlace.lat !== glasgow.lat) fail('choosing a place saved ' + JSON.stringify(last));
+    await page.waitForFunction(() => /Glasgow, Scotland/.test(document.getElementById('home-weather-chosen').textContent));
+    if (JSON.stringify(searches) !== '["Nowhere","Glasgow"]') fail('searched for ' + JSON.stringify(searches));
+    if (!/GeoNames/.test(await page.locator('#home-weather-place').textContent())) fail('no credit for the place search');
+    saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
+    await sel.selectOption('off');
+    await saved;
+    await page.waitForFunction(() => document.getElementById('home-weather-place').hidden);
+  } catch (e) {
+    fail(e.message);
+  } finally { await page.close(); }
+}
+
 // The TV's tile, Keep the preview on and Preview in the tile.
 async function visitHomePreviewOptions(browser, base, problems) {
   const page = await browser.newPage();
@@ -318,8 +444,14 @@ async function visitHomePreviewOptions(browser, base, problems) {
     return s ? s.getAttribute('type') + ' ' + s.getAttribute('src') : null;
   });
   const shownIn = () => page.evaluate(() => {
-    const pv = document.getElementById('preview'), tile = pv.parentNode.closest && pv.parentNode.closest('.tile');
-    return tile ? tile.querySelector('.nm').textContent : pv.parentNode.id;
+    const pv = document.getElementById('preview');
+    if (pv.parentNode.closest && pv.parentNode.closest('.tile')) return 'reparented:' + pv.parentNode.closest('.tile').querySelector('.nm').textContent;
+    if (!pv.classList.contains('intile')) return pv.parentNode.id;
+    const tile = document.querySelector('#rows .tile.live');
+    if (!tile) return 'unmarked:' + pv.parentNode.id;
+    const a = tile.getBoundingClientRect(), b = pv.getBoundingClientRect();
+    const aligned = ['left', 'top', 'width', 'height'].every(k => Math.abs(a[k] - b[k]) < 2);
+    return aligned ? tile.querySelector('.nm').textContent : 'misaligned:' + tile.querySelector('.nm').textContent;
   });
   async function rest() {
     await page.clock.fastForward(400);
@@ -551,6 +683,794 @@ async function visitHomePreview(browser, base, problems) {
   } finally { await page.close(); }
 }
 
+async function visitHomeFootball(browser, base, problems) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  page.on('pageerror', e => problems.push('Football: ' + e.message));
+  let layout = { rows: ['app'], order: { app: [], dev: [], ch: [] }, hidden: { app: [], dev: [], ch: [] }, channels: [],
+    showClock: true, showLastOn: false, picture: false, livePreview: false, hintSeen: true, searchHintSeen: true,
+    widgets: require('../server/lib/home-widgets').normalise(null) };
+  let version = 1, scoreReads = 0, available = true, count = 9, covered = false, scoreChange = 0, mode = 'live', missingTeams = [], nextMatches = [], loading = false;
+  const matches = () => Array.from({ length: count }, (_, i) => ({ id: String(i + 1), league: 'Ligue 1', status: "42'", date: mode === 'latest' ? '2026-11-07T20:00:00.000Z' : '',
+    home: { id: '160', name: 'Paris Saint-Germain', score: i + scoreChange }, away: { id: '166', name: 'Lille', score: 0 } }));
+  await page.route('**/api/home**', route => {
+    const pathname = new URL(route.request().url()).pathname;
+    const reply = body => route.fulfill({ json: body });
+    if (pathname === '/api/home') return reply({ ok: true, supported: { ok: true }, enabled: true, active: true, writable: true, layout });
+    if (pathname === '/api/home/catalogue') return reply({ ok: true, layout, layoutVersion: String(version), apps: [], devices: [], channels: [], order: { app: ['lg-home'], dev: [], ch: [] }, sources: {} });
+    if (pathname === '/api/home/layout') {
+      layout = Object.assign({}, layout, route.request().postDataJSON()); version++;
+      return reply({ ok: true, layout });
+    }
+    if (pathname.endsWith('/football/leagues')) return reply({ ok: true, leagues: [{ id: 'fra.1', name: 'Ligue 1' }, { id: 'eng.1', name: 'Premier League' }] });
+    if (pathname.endsWith('/football/teams')) {
+      const league = route.request().postDataJSON().league;
+      return reply({ ok: true, teams: league === 'fifa.friendly' ? [{ id: '478', name: 'France' }] : league === 'fifa.friendly.w'
+        ? [{ id: '2752', name: 'France' }] : [{ id: '160', name: 'Paris Saint-Germain' }, { id: '166', name: 'Lille' }] });
+    }
+    if (pathname.endsWith('/widgets/football')) { scoreReads++; return reply({ ok: true, available, loading, partial: false, mode, missingTeams, nextMatches: available ? nextMatches : [], updated: Date.now(), matches: available ? matches() : [] }); }
+    return reply({ ok: true, covered, build: 'football', layoutVersion: String(version) });
+  });
+  try {
+    await page.goto(base + '/?tab=home');
+    const widget = page.locator('#home-widgets');
+    await widgetManager(page, 'widgets', 'football');
+    await widget.getByLabel('Teams from', { exact: true }).selectOption('fifa.friendly');
+    await widget.getByRole('checkbox', { name: 'France', exact: true }).check();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.football.teams[0]?.id === '478');
+    await page.locator('#home-widget-list').getByRole('button', { name: 'Football scores', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.football.enabled && !homeLayout.widgets.football.leagues.length);
+    await page.reload();
+    await widgetManager(page, 'widgets', 'football');
+    await widget.getByRole('button', { name: 'Remove France', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving && !homeLayout.widgets.football.enabled && !homeLayout.widgets.football.teams.length);
+    await widget.getByLabel('Teams from', { exact: true }).selectOption('fifa.friendly.w');
+    await widget.getByRole('checkbox', { name: 'France', exact: true }).check();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.football.teams[0]?.id === '2752');
+    await widget.getByRole('button', { name: 'Remove France', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving && !homeLayout.widgets.football.teams.length);
+    await widget.getByRole('button', { name: 'Browse leagues', exact: true }).click();
+    await widget.getByRole('checkbox', { name: 'Ligue 1', exact: true }).check();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.football.leagues.length === 1);
+    await widget.getByLabel('Teams from', { exact: true }).selectOption('fra.1');
+    await widget.getByRole('checkbox', { name: 'Paris Saint-Germain', exact: true }).check();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.football.teams.length === 1);
+    await widget.getByRole('searchbox', { name: 'Find a team', exact: true }).fill('absent');
+    await widget.locator('#home-football-team').getByText('No matching choices. Try another name.', { exact: true }).waitFor();
+    await widget.getByRole('searchbox', { name: 'Find a team', exact: true }).fill('');
+    await page.locator('#home-widget-list').getByRole('button', { name: 'Football scores', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.football.enabled);
+    await page.reload();
+    await widgetManager(page, 'widgets', 'football');
+    await widget.getByRole('button', { name: 'Remove Paris Saint-Germain', exact: true }).waitFor();
+    if (!layout.widgets.football.enabled || layout.widgets.football.leagues[0].id !== 'fra.1') problems.push('Football: saved selections did not survive reload');
+    if (scoreReads) problems.push('Football: the settings dashboard polled live scores');
+    await widget.getByRole('button', { name: 'Browse leagues', exact: true }).click();
+    await widget.getByRole('checkbox', { name: 'Ligue 1', exact: true }).waitFor();
+    await widget.getByLabel('Teams from', { exact: true }).selectOption('fra.1');
+    await widget.getByRole('checkbox', { name: 'Paris Saint-Germain', exact: true }).waitFor();
+    for (const theme of ['dark', 'light']) {
+      await page.evaluate(theme => { document.documentElement.setAttribute('data-theme', theme); }, theme);
+      await page.setViewportSize({ width: 390, height: 844 });
+      if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)) problems.push('Football: phone overflow in ' + theme);
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await widget.getByRole('button', { name: 'Clear team selection', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving && !homeLayout.widgets.football.teams.length);
+    await page.clock.install();
+    await page.goto(base + '/assets/home.html');
+    await page.locator('#widget-football .fw-scrolling').waitFor();
+    await page.waitForFunction(() => getComputedStyle(document.querySelector('#widget-football .fw-track')).transform !== 'none');
+    if (await page.locator('#widget-football .fw-group[aria-hidden=true]').count() !== 1) problems.push('Football: the seamless loop has no hidden duplicate');
+    const firstTransform = await page.locator('#widget-football .fw-track').evaluate(el => getComputedStyle(el).transform);
+    await page.waitForFunction(first => getComputedStyle(document.querySelector('#widget-football .fw-track')).transform !== first, firstTransform);
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    if (await page.locator('#widget-football .fw-track').evaluate(el => getComputedStyle(el).animationName) !== 'none') problems.push('Football: reduced motion did not stop automatic scrolling');
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.locator('#widget-football').focus();
+    if (await page.locator('#widget-football .fw-track').evaluate(el => getComputedStyle(el).animationPlayState) !== 'paused') problems.push('Football: focusing did not pause scrolling');
+    await page.locator('#widget-football').click();
+    await page.locator('#widget--panel .fw-row').first().waitFor();
+    if (await page.locator('#widget--panel .fw-row').count() !== count) problems.push('Football: the expanded list omitted matches');
+    await page.keyboard.press('ArrowDown');
+    if (!await page.locator('#widget--panel .wp-content').evaluate(el => el.scrollTop > 0)) problems.push('Football: the expanded list did not scroll with the remote');
+    await page.keyboard.press('Escape');
+    await page.locator('#widget--panel').waitFor({ state: 'detached' });
+    const readScores = async () => {
+      const reply = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/widgets/football');
+      await page.clock.fastForward(60000); await reply;
+    };
+    await page.locator('#widget-football .fw-track').evaluate(el => { el.style.animationDelay = el.style.webkitAnimationDelay = '-5s'; });
+    await page.waitForFunction(() => Math.abs(new DOMMatrix(getComputedStyle(document.querySelector('#widget-football .fw-track')).transform).m42) >= 59);
+    scoreChange = 1; await readScores();
+    if (await page.locator('#widget-football .fw-track').evaluate(el => Math.abs(new DOMMatrix(getComputedStyle(el).transform).m42)) < 59) problems.push('Football: a score update restarted the loop');
+    count = 1; await readScores();
+    await page.locator('#widget-football .fw-scrolling').waitFor({ state: 'detached' });
+    if (await page.locator('#widget-football .fw-group').count() !== 1) problems.push('Football: a list that fits was duplicated');
+    count = 0; await readScores();
+    await page.getByText('No selected teams playing now', { exact: true }).waitFor();
+    mode = 'latest'; count = 3;
+    layout.widgets.football.teams = [{ id: '160', name: 'Paris Saint-Germain' }, { id: '478', name: 'France' }]; version++;
+    missingTeams = [{ id: '478', name: 'France', unavailable: false }];
+    await readScores();
+    await page.getByText('Latest results · ESPN', { exact: true }).waitFor();
+    await page.locator('#widget-football .fw-group:not([aria-hidden])').getByText('No completed result available', { exact: true }).waitFor();
+    if (await page.locator('#widget-football .fw-group:not([aria-hidden]) .fw-meta').filter({ hasText: '2026' }).count() !== 3) problems.push('Football: latest results omitted their dates');
+    await page.locator('#widget-football .fw-scrolling').waitFor();
+    await page.locator('#widget-football').click();
+    await page.locator('#widget--panel').getByText('Latest results · ESPN', { exact: true }).waitFor();
+    if (await page.locator('#widget--panel .fw-row').count() !== 4) problems.push('Football: expanded results omitted a team or its missing-result entry');
+    await page.keyboard.press('Escape');
+    const nextFixture = { id: '999', upcoming: true, timeValid: true, date: '2026-11-13T20:00:00.000Z', league: 'Next Cup',
+      home: { id: '160', name: 'Paris Saint-Germain', score: null }, away: { id: '166', name: 'Lille', score: null } };
+    nextMatches = [nextFixture]; await readScores();
+    const nextRow = page.locator('#widget-football .fw-group:not([aria-hidden]) .fw-row').filter({ hasText: 'Next match' });
+    await nextRow.waitFor();
+    const kickoff = await page.evaluate(date => new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }).format(new Date(date)), nextFixture.date);
+    if (!(await nextRow.innerText()).includes(kickoff)) problems.push('Football: next fixture omitted its local date or kickoff time');
+    if (!await nextRow.evaluate(el => el.scrollHeight <= el.clientHeight)) problems.push('Football: the next-match date was clipped');
+    if ((await nextRow.locator('b').allTextContents()).some(score => score !== '–')) problems.push('Football: next fixture showed an invented score');
+    await page.locator('#widget-football').click();
+    await page.locator('#widget--panel').getByText('Next match', { exact: true }).waitFor();
+    await page.keyboard.press('Escape');
+    count = 0; missingTeams = []; nextFixture.timeValid = false; loading = true; await readScores();
+    const dateOnly = await page.evaluate(date => new Intl.DateTimeFormat('en', { day: 'numeric', month: 'short', year: 'numeric' }).format(new Date(date)), nextFixture.date);
+    if (await nextRow.locator('.fw-meta').last().innerText() !== dateOnly + ' · Next Cup') problems.push('Football: an unconfirmed kickoff time appeared');
+    if (await page.locator('#widget-football .fw-scrolling').count()) problems.push('Football: a single next fixture did not fit the compact widget');
+    const beforeProgress = scoreReads;
+    const progressReply = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/widgets/football');
+    loading = false;
+    await page.clock.fastForward(1000); await progressReply;
+    if (scoreReads !== beforeProgress + 1) problems.push('Football: loading progress did not refresh after one second');
+    await page.locator('#widget-football .widget-status').getByText('Latest results · ESPN', { exact: true }).waitFor();
+    await page.clock.fastForward(1000);
+    if (scoreReads !== beforeProgress + 1) problems.push('Football: completed loads kept polling at the loading rate');
+    nextMatches = [];
+    missingTeams = []; mode = 'live';
+    available = false; await readScores();
+    await page.getByText('Football scores unavailable', { exact: true }).waitFor();
+    if (await page.locator('#widget-football .fw-row').count()) problems.push('Football: failed refresh retained old scores');
+    covered = true;
+    const heartbeat = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/beat');
+    await page.clock.fastForward(5000); await heartbeat;
+    await page.waitForFunction(() => document.body.classList.contains('football-paused'));
+    const before = scoreReads;
+    await page.clock.fastForward(120000);
+    if (scoreReads !== before) problems.push('Football: scores kept polling while Home was covered');
+    covered = false; available = true; count = 3;
+    const resumed = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/widgets/football');
+    await page.clock.fastForward(5000); await resumed;
+    await page.locator('#widget-football .fw-scrolling').waitFor();
+  } finally { await page.close(); }
+}
+
+async function widgetManager(page, tab = 'widgets', id) {
+  if (!await page.locator('#home-widget-manager').evaluate(dialog => dialog.open)) {
+    await page.getByRole('button', { name: 'Manage widgets', exact: true }).click();
+  }
+  await page.locator('#home-widget-tab-' + tab).click();
+  if (id) {
+    const back = page.getByRole('button', { name: 'Back to widgets', exact: true });
+    if (await back.isVisible()) await back.click();
+    await page.locator('#home-widget-list [data-widget-pick="' + id + '"]').click();
+  }
+}
+
+async function visitHomeWidgets(browser, base, problems) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  page.on('pageerror', e => problems.push('Home widgets: ' + e.message));
+  let layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
+    hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true, searchHintSeen: true,
+    showClock: true, weather: 'ha', widgets: require('../server/lib/home-widgets').normalise(null) };
+  let version = 1, weatherReads = 0, covered = false, lastWeather = null, pushedWeather = null, weatherUnavailable = false;
+  const reply = (route, body) => route.fulfill({ json: body });
+  await page.route('**/api/home**', route => {
+    const pathname = new URL(route.request().url()).pathname;
+    if (pathname === '/api/home') return reply(route, { ok: true, supported: { ok: true }, enabled: true, active: true, writable: true, layout });
+    if (pathname === '/api/home/catalogue') return reply(route, { ok: true, layout, layoutVersion: String(version),
+      apps: [], devices: [], channels: [], order: { app: ['lg-home'], dev: [], ch: [] }, sources: {} });
+    if (pathname === '/api/home/layout') {
+      layout = Object.assign({}, layout, route.request().postDataJSON());
+      layout.widgets = require('../server/lib/home-widgets').normalise(layout.widgets);
+      layout.widgetPlacement = require('../server/lib/home-widget-format').placement(layout);
+      version++;
+      return reply(route, { ok: true, layout });
+    }
+    if (pathname === '/api/home/widgets/locations') return reply(route, { ok: true,
+      locations: [{ name: 'Paris, France', latitude: 48.85, longitude: 2.35 }] });
+    if (pathname === '/api/home/widgets/store') return reply(route, { ok: true, source: 'bundled', widgets: require('../server/assets/widget-store/catalogue.json').widgets });
+    if (pathname === '/api/home/weather') return reply(route, pushedWeather ? { ok: true, ...pushedWeather } : { ok: false });
+    if (pathname === '/api/home/widgets/weather') {
+      weatherReads++;
+      lastWeather = route;
+      return reply(route, weatherUnavailable ? { ok: true, available: false } : require('../test/mocks/widget-forecast')());
+    }
+    return reply(route, { ok: true, build: 'one', layoutVersion: String(version), covered, weather: pushedWeather });
+  });
+  try {
+    await page.goto(base + '/?tab=home');
+    await page.getByRole('button', { name: 'Manage widgets', exact: true }).waitFor();
+    await page.locator('#home-weather-sel').selectOption('off');
+    await page.waitForFunction(() => !homeSaving && homeLayout.weather === 'off');
+    await page.locator('#home-weather-sel').selectOption('ha');
+    await page.waitForFunction(() => !homeSaving && homeLayout.weather === 'ha');
+    if (await page.locator('#home-widget-manager').isVisible() || await page.locator('#home-widgets').isVisible()) problems.push('Widget manager: editors occupy the Home page before opening');
+    await widgetManager(page);
+    await page.locator('#home-widget-tab-widgets').focus();
+    await page.keyboard.press('ArrowRight');
+    if (await page.locator('#home-widget-tab-layout').getAttribute('aria-selected') !== 'true' || !await page.locator('#home-widget-layout').isVisible()) problems.push('Widget manager: arrow keys did not select and show the Layout tab');
+    await page.keyboard.press('Home');
+    if (!await page.locator('#home-widget-editors').isVisible() || await page.locator('#home-widget-layout').isVisible()) problems.push('Widget manager: tab panels are not exclusive');
+    await page.keyboard.press('Escape');
+    if (await page.locator('#home-widget-manager').isVisible() || await page.evaluate(() => document.activeElement.id) !== 'home-widget-manage') problems.push('Widget manager: Escape did not close and return focus to its opener');
+    await widgetManager(page);
+    const widgets = page.locator('#home-widgets');
+    await page.locator('#home-widget-list').getByRole('button', { name: 'Clock and date', exact: true }).waitFor();
+    await widgets.getByText('Centre needs Last watched off. Right needs Picture details and the top live preview off.', { exact: true }).first().waitFor();
+    if (!await widgets.getByRole('combobox', { name: 'Position of Clock and date', exact: true }).locator('option[value=center]').isDisabled()) {
+      problems.push('Home widgets: reserved centre position was not explained and disabled');
+    }
+    await page.evaluate(() => { homeLayout.picture = true; homeLayout.livePreview = true; renderHomeWidgets(); });
+    if (!await widgets.getByRole('combobox', { name: 'Position of Clock and date', exact: true }).locator('option[value=right]').isDisabled()) {
+      problems.push('Home widgets: reserved right position was not disabled');
+    }
+    await widgets.getByText('Picture details beside a top live preview also reserve the centre. Switch either one off to free it.', { exact: true }).first().waitFor();
+    await page.evaluate(() => { homeLayout.picture = false; homeLayout.livePreview = false; renderHomeWidgets(); });
+    await widgets.getByLabel('Time format', { exact: true }).selectOption('12');
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.clock.format === '12');
+    await widgets.getByLabel('Show date', { exact: true }).uncheck();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.clock.date === false);
+    await widgetManager(page, 'widgets', 'weather');
+    await widgets.getByRole('searchbox', { name: 'City', exact: true }).fill('Paris');
+    await widgets.getByRole('button', { name: 'Find city', exact: true }).click();
+    await widgets.getByRole('button', { name: 'Paris, France', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.weather.location !== null);
+    if (await widgets.getByRole('searchbox', { name: 'City', exact: true }).inputValue() !== 'Paris, France') problems.push('Home widgets: choosing a city did not show the saved selection in the City field');
+    await page.reload();
+    await widgetManager(page, 'widgets', 'weather');
+    await widgets.getByRole('searchbox', { name: 'City', exact: true }).waitFor();
+    if (await widgets.getByRole('searchbox', { name: 'City', exact: true }).inputValue() !== 'Paris, France') problems.push('Home widgets: reloading made the saved city disappear from the City field');
+    await widgets.getByRole('searchbox', { name: 'City', exact: true }).fill('');
+    await page.evaluate(() => renderHomeWidgets());
+    if (await widgets.getByRole('searchbox', { name: 'City', exact: true }).inputValue() !== '' || layout.widgets.weather.location.name !== 'Paris, France') problems.push('Home widgets: clearing a city search reset the saved selection or lost the empty draft');
+    await page.reload();
+    await widgetManager(page, 'widgets', 'weather');
+    await widgets.getByRole('searchbox', { name: 'City', exact: true }).waitFor();
+    if (await widgets.getByRole('searchbox', { name: 'City', exact: true }).inputValue() !== 'Paris, France') problems.push('Home widgets: the saved city was not restored after clearing a search and reloading');
+    await page.locator('#home-widget-list').getByRole('button', { name: 'Weather', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.weather.enabled);
+    await widgets.getByRole('button', { name: 'Move left', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.order[0] === 'weather');
+    await widgetManager(page, 'store');
+    await page.locator('#home-widget-import').setInputFiles({ name: 'invalid.json', mimeType: 'application/json', buffer: Buffer.from('{') });
+    await page.locator('#home-widget-manager [data-widget-error]').filter({ hasText: 'Choose a valid widget JSON file.' }).waitFor({ state: 'visible' });
+    if (layout.widgets.custom.length) problems.push('Home widgets: an invalid import changed the layout');
+    const manifest = { version: 1, type: 'text', id: 'message', name: 'Message', value: '<script>bad()</script>', detail: 'Friday' };
+    await page.locator('#home-widget-import').setInputFiles({ name: 'message.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(manifest)) });
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.custom.length === 1);
+    const componentManifest = require('../docs/development/widget-examples/energy.json');
+    await widgetManager(page, 'store');
+    await page.locator('#home-widget-import').setInputFiles({ name: 'energy.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(componentManifest)) });
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.custom.length === 2);
+    const editor = widgets.getByRole('textbox', { name: 'Widget JSON', exact: true });
+    const componentJSON = await editor.inputValue();
+    await editor.fill('{');
+    await editor.locator('..').locator('..').getByRole('button', { name: 'Save widget', exact: true }).click();
+    await page.locator('#home-widget-manager [data-widget-error]').filter({ hasText: 'Enter valid widget JSON.' }).waitFor({ state: 'visible' });
+    await editor.fill(componentJSON);
+    await editor.locator('..').locator('..').getByRole('button', { name: 'Save widget', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving);
+    await page.setViewportSize({ width: 390, height: 844 });
+    await widgetManager(page, 'widgets', 'clock');
+    await page.getByRole('button', { name: 'Back to widgets', exact: true }).click();
+    if (await widgets.isVisible() || !await page.locator('#home-widget-list').isVisible()) problems.push('Widget manager: phone Back did not return to the list');
+    await page.locator('#home-widget-list [data-widget-pick="weather"]').click();
+    if (!await widgets.isVisible() || await page.locator('#home-widget-list').isVisible()) problems.push('Widget manager: phone selection did not replace the list with its editor');
+    const manager = page.locator('#home-widget-manager');
+    for (const theme of ['dark', 'light']) {
+      await page.evaluate(theme => document.documentElement.setAttribute('data-theme', theme), theme);
+      await page.setViewportSize({ width: 320, height: 640 });
+      if (await manager.evaluate(el => el.scrollWidth > el.clientWidth + 1 || el.getBoundingClientRect().width > innerWidth)) problems.push('Widget manager: phone dialog overflows in ' + theme);
+      await widgetManager(page, 'layout');
+      await page.locator('#home-widget-tab-widgets').click();
+      if (!await widgets.isVisible()) problems.push('Widget manager: switching tabs lost the phone editor');
+    }
+    // Displayed weather is a deterministic fixture; this test never reaches the provider.
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.clock.install();
+    await page.goto(base + '/assets/home.html');
+    await page.waitForFunction(() => document.querySelector('#widget-weather .widget-value')?.textContent === '13°C');
+    const actual = await page.evaluate(() => ({
+      first: document.querySelector('#widgets>div').id,
+      date: getComputedStyle(document.getElementById('date')).display,
+      meridiem: document.getElementById('mer').textContent,
+      stale: document.querySelector('#widget-weather .widget-status').textContent,
+      width: document.getElementById('widgets').offsetWidth,
+      statusFits: document.querySelector('#widget-weather .widget-status').getBoundingClientRect().bottom <=
+        document.getElementById('widget-weather').getBoundingClientRect().bottom + 1
+    }));
+    if (actual.first !== 'widget-weather' || actual.date !== 'none' || !actual.meridiem || !actual.stale || !actual.statusFits || actual.width !== 744) {
+      problems.push('Home widgets: settings did not reach Home: ' + JSON.stringify(actual));
+    }
+    if (await page.locator('#widget-weather .wk-chart svg').count() !== 2) problems.push('Home widgets: today’s weather graphs are missing');
+    const weatherClock = await page.locator('#widget-weather').evaluate(el => ({
+      time: el.querySelector('.widget-weather-time').textContent,
+      meridiem: el.querySelector('.widget-weather-meridiem').textContent,
+      dateHidden: el.querySelector('.widget-weather-date').hidden
+    }));
+    if (weatherClock.time !== await page.locator('#hm').textContent() || weatherClock.meridiem !== actual.meridiem || !weatherClock.dateHidden)
+      problems.push('Home widgets: Weather did not follow the 12-hour clock and hidden-date settings');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('Enter');
+    await page.locator('#widget--panel').waitFor({ state: 'visible' });
+    if (await page.locator('.wp-day').count() !== 10 || await page.locator('#widget--panel .wk-chart svg').count() !== 2) {
+      problems.push('Home widgets: the expanded forecast is missing days or charts');
+    }
+    await page.keyboard.press('Escape');
+    await page.locator('#widget--panel').waitFor({ state: 'detached' });
+    await page.keyboard.press('ArrowDown');
+    const initialReads = weatherReads;
+    covered = true;
+    await page.clock.fastForward(5000);
+    await page.waitForFunction(() => document.documentElement.classList.contains('resting'));
+    await page.clock.fastForward(16 * 60000);
+    if (weatherReads !== initialReads) problems.push('Home widgets: weather kept polling while covered');
+    covered = false;
+    await page.clock.fastForward(5000);
+    await waitUntil(page, () => Promise.resolve(weatherReads > initialReads));
+    if (weatherReads === initialReads) problems.push('Home widgets: weather did not refresh on return');
+    layout.showClock = false;
+    layout.widgets.clock = { format: '24', date: true };
+    layout.widgets.custom[0].enabled = true;
+    version++;
+    await page.clock.setSystemTime(new Date(2026, 10, 13, 23, 59, 30));
+    await page.clock.fastForward(15000);
+    await page.waitForFunction(() => document.getElementById('when').style.display === 'none' &&
+      document.querySelector('#widget-weather .widget-weather-time').textContent === '23:59');
+    await page.locator('#widget-message').waitFor();
+    const beforeMidnight = await page.locator('.widget-weather-date').textContent();
+    const clockReads = weatherReads;
+    await page.clock.fastForward(60000);
+    await page.waitForFunction(() => document.querySelector('.widget-weather-time').textContent === '00:00');
+    if (await page.locator('.widget-weather-date').textContent() === beforeMidnight ||
+        await page.locator('.widget-weather-meridiem').textContent() !== '' ||
+        weatherReads !== clockReads) problems.push('Home widgets: Weather clock did not cross midnight independently of weather polling');
+    weatherUnavailable = true;
+    await page.reload();
+    await page.locator('#widget-weather .widget-detail').filter({ hasText: 'Weather unavailable' }).waitFor();
+    if (!await page.locator('.widget-weather-time').textContent() || !await page.locator('.widget-weather-date').isVisible())
+      problems.push('Home widgets: unavailable weather hid its clock or date');
+    weatherUnavailable = false;
+    layout.widgets.weather.enabled = false;
+    layout.widgets.custom[0].enabled = true;
+    version++;
+    await page.clock.fastForward(5000);
+    await page.waitForFunction(() => !!document.getElementById('widget-message'));
+    if (await page.locator('#widget-message .widget-value').textContent() !== manifest.value ||
+        await page.locator('#widget-message script').count()) problems.push('Home widgets: imported text was not treated literally');
+    if (!lastWeather) problems.push('Home widgets: weather fixture was never read');
+    // A component widget binds zeros and negative values, with literal text.
+    layout.widgets.custom = [{ version: 2, type: 'components', id: 'energy', name: 'Energy', enabled: true,
+      data: { source: 'static', values: { power: 0, history: [-4, null, 0, 6], labels: ['00', '06', '12', '18'] } },
+      components: [{ type: 'data', label: 'Power', field: 'power', unit: 'W', icon: 'home' }, { type: 'chart', label: 'Usage', field: 'history', labels: 'labels', style: 'bar' }],
+      expanded: [] }];
+    layout.widgets = require('../server/lib/home-widgets').normalise(layout.widgets);
+    layout.showLastOn = false;
+    layout.widgets.positions.energy = 'center';
+    layout.widgetPlacement = require('../server/lib/home-widget-format').placement(layout);
+    version++;
+    await page.clock.fastForward(5000);
+    await page.locator('#widget-energy').waitFor();
+    const energy = await page.locator('#widget-energy').innerText();
+    if (!energy.includes('0 W') || await page.locator('#widget-energy svg').count() < 2) problems.push('Home widgets: data, icon or chart component did not render');
+    if (await page.locator('#widget-energy').getAttribute('data-position') !== 'center') problems.push('Home widgets: centre positioning was ignored');
+    // Enter expands the selected custom widget; OK closes without reopening it.
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('Enter');
+    await page.locator('#widget--panel').waitFor();
+    await page.keyboard.press('Enter');
+    await page.locator('#widget--panel').waitFor({ state: 'detached' });
+    // Three widgets can replace Last watched once the other top plates are off.
+    layout.showClock = true; layout.widgets.weather.enabled = true;
+    layout.widgets.positions.clock = 'left'; layout.widgets.positions.weather = 'right';
+    layout.widgetPlacement = require('../server/lib/home-widget-format').placement(layout);
+    version++;
+    await page.clock.fastForward(5000);
+    await page.waitForFunction(() => document.getElementById('widget-weather') && document.getElementById('when').style.display !== 'none');
+    const positions = await page.evaluate(() => ['when', 'widget-energy', 'widget-weather'].map(id => document.getElementById(id).getBoundingClientRect().left));
+    if (!(positions[0] < positions[1] && positions[1] < positions[2])) problems.push('Home widgets: left, centre and right positions overlap or are unordered: ' + JSON.stringify(positions));
+    pushedWeather = { condition: 'sunny', temp: 12, city: 'Home Assistant city' };
+    for (const view of ['standard', 'alternative']) {
+      layout.view = view; version++;
+      await page.clock.fastForward(5000);
+      await page.waitForFunction(view => document.getElementById('stage').classList.contains('alternative') === (view === 'alternative'), view);
+      await page.waitForFunction(() => document.getElementById('wxTemp').textContent === '12°');
+      const overlapping = await page.evaluate(() => {
+        const badge = document.getElementById('weather').getBoundingClientRect();
+        return ['when', 'widget-energy', 'widget-weather'].filter(id => {
+          const widget = document.getElementById(id).getBoundingClientRect();
+          return badge.left < widget.right && badge.right > widget.left && badge.top < widget.bottom && badge.bottom > widget.top;
+        });
+      });
+      if (overlapping.length) problems.push('Home widgets: the Home Assistant weather badge overlaps ' + overlapping.join(', ') + ' in ' + view);
+    }
+    pushedWeather = null; layout.view = 'standard'; version++;
+    await page.clock.fastForward(5000);
+    await page.waitForFunction(() => !document.getElementById('stage').classList.contains('alternative'));
+    await page.keyboard.down('Enter');
+    await page.clock.fastForward(800);
+    await page.keyboard.up('Enter');
+    await page.locator('#widget--message').filter({ hasText: 'Centre needs Last watched off' }).waitFor();
+    await page.keyboard.press('ArrowLeft');
+    await waitUntil(page, () => Promise.resolve(layout.widgets.positions.energy === 'left'));
+    if (layout.widgets.positions.energy !== 'left' || layout.widgets.positions.clock !== 'center') problems.push('Home widgets: remote positioning did not swap occupied slots');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowDown');
+
+    layout.showClock = false;
+    layout.widgets = require('../server/lib/home-widgets').normalise({ custom: [
+      { version: 1, type: 'text', id: 'message', name: 'Message', value: 'Keep this text', enabled: true },
+      { version: 2, type: 'components', id: 'panel', name: 'Panel', enabled: true,
+        data: { source: 'static' }, components: [{ type: 'text', text: 'Panel content' }] },
+      { version: 1, type: 'text', id: 'panel-title', name: 'Panel title', value: 'Another widget', enabled: true }
+    ] });
+    layout.widgetPlacement = require('../server/lib/home-widget-format').placement(layout);
+    version++;
+    await page.goto(base + '/assets/home.html');
+    await page.locator('#widget-message .widget-value').waitFor();
+    await page.locator('#widget-message').focus();
+    if (await page.locator('#widget-message .widget-value').textContent() !== 'Keep this text') problems.push('Home widgets: focus help overwrote a widget named message');
+    await page.locator('#widget-panel').evaluate(element => element.click());
+    await page.getByRole('dialog', { name: 'Panel', exact: true }).waitFor();
+    if (await page.locator('#widget-panel').count() !== 1 || await page.locator('#widget-panel-title').count() !== 1) problems.push('Home widgets: dialog IDs collide with widget IDs');
+    await page.keyboard.press('Escape');
+    await page.locator('#widget--panel').waitFor({ state: 'detached' });
+
+    layout.showClock = true;
+    layout.widgets = require('../server/lib/home-widgets').normalise({ custom: [
+      { version: 1, type: 'text', id: 'constructor', name: 'Constructor', value: 'A valid id', enabled: true }
+    ] });
+    layout.widgetPlacement = require('../server/lib/home-widget-format').placement(layout);
+    version++;
+    await page.goto(base + '/assets/home.html');
+    await page.locator('#widget-constructor').waitFor();
+    await page.locator('#widget-constructor').focus();
+    await page.keyboard.down('Enter');
+    await page.clock.fastForward(800);
+    await page.keyboard.up('Enter');
+    await page.keyboard.press('ArrowRight');
+    await waitUntil(page, () => Promise.resolve(layout.widgets.positions.constructor === 'right'));
+    if (layout.widgets.positions.constructor !== 'right' || layout.widgets.positions.clock !== 'left') problems.push('Home widgets: remote placement read an inherited position for constructor');
+
+  } finally { await page.close(); }
+}
+
+async function visitWidgetLayout(browser, base, problems) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  page.on('pageerror', e => problems.push('Widget layout: ' + e.message));
+  const widgets = require('../server/lib/home-widgets'), planner = require('../server/assets/widget-layout');
+  let layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] }, hidden: { app: [], dev: [], ch: [] },
+    channels: [], hintSeen: true, showClock: true, showLastOn: true, picture: false, livePreview: false,
+    widgets: widgets.normalise({ weather: { enabled: true, location: { name: 'Paris', latitude: 48.85, longitude: 2.35 } },
+      custom: [{ version: 1, type: 'text', id: 'notice', name: 'Notice', value: 'Hello', enabled: false }] }) };
+  let writes = 0, accepted = 0, writable = true;
+  const display = () => Object.assign({}, layout, { widgetPlacement: planner.placement(layout) });
+  await page.route('**/api/home**', route => {
+    const pathname = new URL(route.request().url()).pathname, reply = json => route.fulfill({ json });
+    if (pathname === '/api/home') return reply({ ok: true, supported: { ok: true }, enabled: true, active: true, writable, layout: display() });
+    if (pathname === '/api/home/layout') {
+      writes++;
+      const next = Object.assign({}, layout, route.request().postDataJSON()); next.widgets = widgets.normalise(next.widgets);
+      if (planner.validate(next).length) return reply({ ok: false, error: 'Layout changed. Review the zone requirements.' });
+      accepted++; layout = next;
+      return reply({ ok: true, layout: display() });
+    }
+    if (pathname === '/api/home/catalogue') return reply({ ok: true, layout: display(), apps: [], devices: [], channels: [], order: { app: ['lg-home'], dev: [], ch: [] }, sources: {} });
+    return reply({ ok: true });
+  });
+  const board = page.locator('#home-widget-layout');
+  const card = id => board.locator('.hwl-order [data-widget-id="' + id + '"]');
+  const zone = position => board.locator('[data-widget-zone="' + position + '"]');
+  try {
+    await page.goto(base + '/?tab=home');
+    await widgetManager(page, 'layout');
+    await card('clock').waitFor();
+    await zone('center').getByText('Switch off Last watched in Shown on Home.', { exact: false }).waitFor();
+    await card('clock').dragTo(zone('center'));
+    if (writes) problems.push('Widget layout: dropping into reserved centre sent a save');
+    await zone('center').getByRole('button', { name: 'Review settings', exact: true }).click();
+    if (await page.evaluate(() => document.activeElement.id) !== 'home-show-last') problems.push('Widget layout: requirement shortcut did not focus Last watched');
+    if (await page.locator('#home-widget-manager').isVisible()) problems.push('Widget manager: external requirement left the dashboard control behind a modal');
+    await widgetManager(page, 'layout');
+    await card('clock').dragTo(zone('right'));
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.positions.clock === 'right');
+    if (planner.placement(layout).positions.weather !== 'left') problems.push('Widget layout: automatic companion was not assigned a free zone');
+    await zone('right').locator('[data-widget-id="clock"]').dragTo(zone('left'));
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.positions.weather === 'right');
+    if (layout.widgets.positions.clock !== 'left') problems.push('Widget layout: occupied-zone drop did not swap widgets');
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await page.locator('#home-show-last').click();
+    await page.waitForFunction(() => !homeSaving && homeLayout.showLastOn === false);
+    await widgetManager(page, 'layout');
+    await card('weather').click();
+    await zone('center').getByRole('button', { name: 'Place in Centre', exact: true }).focus();
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.positions.weather === 'center');
+    await board.getByRole('button', { name: 'Use Automatic layout', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.positions.clock === 'auto');
+    await page.evaluate(() => homeSaveLayout({ picture: true, livePreview: true, previewInTile: false }));
+    await card('clock').click();
+    await zone('right').getByText('Switch off Picture details.', { exact: false }).waitFor();
+    await zone('right').getByText('Switch off the top live preview, or use Preview in the tile.', { exact: false }).waitFor();
+    await zone('center').getByText('Picture details beside a top live preview also reserve the centre. Switch either one off to free it.', { exact: false }).waitFor();
+    await zone('left').getByText('Free another zone or switch another widget off. Every enabled widget needs a free position.', { exact: true }).waitFor();
+    const blockedWrites = writes;
+    await card('clock').dragTo(zone('right'));
+    if (writes !== blockedWrites) problems.push('Widget layout: reserved preview zone accepted a drop');
+    await page.evaluate(() => homeSaveLayout({ picture: false, previewInTile: true }));
+    await card('clock').dragTo(zone('right'));
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.positions.clock === 'right');
+    await widgetManager(page);
+    await page.locator('#home-widget-list [data-widget-toggle="notice"]').click();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.custom[0].enabled);
+    await widgetManager(page, 'layout');
+    await card('notice').dragTo(zone('left'));
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.positions.notice === 'left');
+    if (await board.locator('.hwl-occupant .hwl-card').count() !== 3 || planner.placement(layout).positions.weather !== 'center') problems.push('Widget layout: three occupied zones did not remain distinct after a swap');
+    await widgetManager(page);
+    await page.locator('#home-widget-list [data-widget-toggle="notice"]').click();
+    await page.waitForFunction(() => !homeSaving && !homeLayout.widgets.custom[0].enabled);
+    await widgetManager(page, 'layout');
+    await page.evaluate(() => {
+      const widgets = homeWidgetSettings(); widgets.weather.enabled = false; widgets.weather.location = null;
+      return homeSaveLayout({ widgets });
+    });
+    await card('weather').click();
+    await zone('center').getByText('Turn this widget on before placing it.', { exact: false }).waitFor();
+    await zone('center').getByText('Choose a city before switching weather on.', { exact: false }).waitFor();
+    const offWrites = writes;
+    await card('weather').dragTo(zone('center'));
+    if (writes !== offWrites || layout.widgets.weather.enabled) problems.push('Widget layout: positioning enabled an off widget');
+    await card('notice').dragTo(card('clock'), { targetPosition: { x: 2, y: 12 } });
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.order[0] === 'notice');
+    if (layout.widgets.custom[0].enabled) problems.push('Widget layout: reordering enabled an off widget');
+    await card('notice').focus();
+    await page.keyboard.press('Alt+ArrowRight');
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.order[1] === 'notice');
+    if (await page.evaluate(() => document.activeElement.dataset.widgetId) !== 'notice') problems.push('Widget layout: keyboard reorder lost focus');
+    if (layout.widgets.custom[0].enabled) problems.push('Widget layout: keyboard reorder enabled an off widget');
+    await card('clock').click();
+    const beforeConflict = accepted;
+    layout.showLastOn = true;
+    await card('clock').dragTo(zone('center'));
+    await page.locator('#home-widget-manager [data-widget-error]').filter({ hasText: 'Layout changed. Review the zone requirements.' }).waitFor({ state: 'visible' });
+    await page.waitForFunction(() => !homeSaving && homeLayout.showLastOn);
+    if (accepted !== beforeConflict || layout.widgets.positions.clock !== 'right') problems.push('Widget layout: a concurrent settings change bypassed validation');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => { closeNav(); document.documentElement.setAttribute('data-theme', 'light'); });
+    if (await board.evaluate(el => el.scrollWidth > el.clientWidth + 1 || el.getBoundingClientRect().right > innerWidth + 1)) problems.push('Widget layout: board overflows on a phone');
+    writable = false;
+    await page.reload();
+    await widgetManager(page, 'layout');
+    await card('clock').waitFor();
+    if (!await card('clock').isDisabled() || await card('clock').getAttribute('draggable') !== 'false') problems.push('Widget layout: read-only cards remained draggable');
+    const readOnlyWrites = writes;
+    await page.evaluate(() => homeWidgetPlace('left'));
+    if (writes !== readOnlyWrites) problems.push('Widget layout: read-only drop sent a save');
+  } finally { await page.close(); }
+}
+
+async function visitWidgetStore(browser, base, problems) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, acceptDownloads: true });
+  page.on('pageerror', e => problems.push('Widget store: ' + e.message));
+  const widgets = require('../server/lib/home-widgets');
+  const store = widgets.store;
+  let layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] }, hidden: { app: [], dev: [], ch: [] },
+    channels: [], hintSeen: true, searchHintSeen: true, showClock: true, widgets: widgets.normalise(null) };
+  let catalogue = JSON.parse(JSON.stringify(require('../server/assets/widget-store/catalogue.json')));
+  let time = 0, writable = true, failInstall = false, failLayout = false, offline = false, version = 1;
+  const init = () => store.init({ now: () => time, fetchJson: (_url, cb) => cb(offline ? new Error('offline') : null, catalogue) });
+  init();
+  const display = () => Object.assign({}, layout, { widgets: widgets.forDisplay(layout.widgets), widgetPlacement: widgets.placement(layout) });
+  await page.route('**/api/home**', route => {
+    const pathname = new URL(route.request().url()).pathname;
+    const reply = json => route.fulfill({ json });
+    if (pathname === '/api/home') return reply({ ok: true, supported: { ok: true }, enabled: true, active: true, writable, layout: display() });
+    if (pathname === '/api/home/catalogue') return reply({ ok: true, layout: display(), layoutVersion: String(version), apps: [], devices: [], channels: [], order: { app: ['lg-home'], dev: [], ch: [] }, sources: {} });
+    if (pathname === '/api/home/widgets/store') {
+      if (route.request().method() === 'GET') return store.read(reply, new URL(route.request().url()).searchParams.has('refresh'));
+      const body = route.request().postDataJSON();
+      if (failInstall) return reply({ ok: false, error: 'Test installation refused' });
+      const result = store.change(layout.widgets, body);
+      if (result.error) return reply({ ok: false, error: result.error });
+      layout.widgets = widgets.normalise(result.widgets); version++;
+      return reply({ ok: true, layout: display(), layoutVersion: String(version) });
+    }
+    if (pathname === '/api/home/layout') {
+      if (failLayout) return reply({ ok: false, error: 'Test widget save refused' });
+      const next = Object.assign({}, layout, route.request().postDataJSON()); next.widgets = widgets.normalise(next.widgets);
+      if (!widgets.placement(next).ok) return reply({ ok: false, error: 'Position unavailable' });
+      layout = next; version++;
+      return reply({ ok: true, layout: display(), layoutVersion: String(version) });
+    }
+    return reply({ ok: true, build: 'one', layoutVersion: String(version), covered: false });
+  });
+  const preview = async name => {
+    await widgetManager(page, 'store');
+    const row = page.locator('#home-store-results .prot-row').filter({ has: page.getByText(name, { exact: true }) });
+    await row.getByRole('button', { name: 'Preview and install', exact: true }).click();
+    return page.getByRole('dialog', { name, exact: true });
+  };
+  const refresh = async () => {
+    const previous = await page.evaluate(() => ({ tab: homeWidgetTab, id: homeWidgetSelected }));
+    await widgetManager(page, 'store');
+    await page.getByRole('button', { name: 'Refresh catalogue', exact: true }).click();
+    await page.waitForFunction(() => !homeStoreLoading);
+    if (previous.tab === 'widgets') await widgetManager(page, 'widgets', previous.id);
+  };
+  try {
+    await page.goto(base + '/?tab=home');
+    await widgetManager(page, 'store');
+    await page.locator('#home-store-count').filter({ hasText: 'Widgets: 4' }).waitFor();
+    await page.getByRole('searchbox', { name: 'Search widgets', exact: true }).fill('recent readings');
+    await page.locator('#home-store-count').filter({ hasText: 'Widgets: 1' }).waitFor();
+    await page.getByRole('searchbox', { name: 'Search widgets', exact: true }).fill('no such widget');
+    await page.getByText('No widgets match these filters.', { exact: true }).waitFor();
+    await page.getByRole('searchbox', { name: 'Search widgets', exact: true }).fill('');
+    await page.getByRole('combobox', { name: 'Category', exact: true }).selectOption('weather');
+    await page.locator('#home-store-count').filter({ hasText: 'Widgets: 1' }).waitFor();
+    let dialog = await preview('City weather');
+    if (await dialog.locator('.wk-chart svg').count() !== 1) problems.push('Widget store: sample chart missing');
+    await dialog.getByText('Uses the city and units selected under Weather. Turning this widget on permits weather requests.', { exact: true }).waitFor();
+    await page.keyboard.press('Escape');
+    await page.getByRole('combobox', { name: 'Category', exact: true }).selectOption('');
+    dialog = await preview('Personal note');
+    await dialog.getByRole('textbox', { name: 'Title', exact: true }).fill('Office');
+    await dialog.getByRole('textbox', { name: 'Message', exact: true }).fill('<b>First reminder</b>');
+    if (await dialog.locator('#home-store-sample-body b').count() || await dialog.locator('#home-store-sample-body').textContent() !== '<b>First reminder</b>Bring popcorn') problems.push('Widget store: preview text was not literal');
+    await dialog.getByRole('button', { name: 'Install widget', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.custom.length === 1);
+    const firstId = layout.widgets.custom[0].id;
+    if (layout.widgets.custom[0].enabled || layout.widgets.custom[0].template.definition.name !== 'Movie night') problems.push('Widget store: installation changed defaults or enabled the widget');
+    await widgetManager(page, 'widgets', firstId);
+    await page.locator('#home-widget-list').getByRole('button', { name: 'Office', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.custom[0].enabled);
+    const title = page.locator('#home-widgets').getByRole('textbox', { name: 'Title', exact: true });
+    await title.fill('Saved title');
+    await title.locator('..').locator('..').getByRole('button', { name: 'Save widget', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.custom[0].settings.title === 'Saved title');
+    await title.fill('Unsaved store title');
+    await refresh();
+    await page.waitForFunction(() => !homeStoreLoading);
+    if (await title.inputValue() !== 'Unsaved store title') problems.push('Widget store: catalogue refresh discarded a settings draft');
+    await page.locator('#home-show-clock').click();
+    await page.waitForFunction(() => !homeSaving);
+    if (await title.inputValue() !== 'Unsaved store title') problems.push('Widget store: another save discarded a settings draft');
+    failInstall = true;
+    await title.locator('..').locator('..').getByRole('button', { name: 'Save widget', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving);
+    if (await title.inputValue() !== 'Unsaved store title' || layout.widgets.custom[0].settings.title !== 'Saved title') problems.push('Widget store: rejected configure lost its draft or changed saved settings');
+    failInstall = false;
+    await title.fill('Saved title');
+    await title.locator('..').locator('..').getByRole('button', { name: 'Save widget', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving);
+    if (await page.evaluate(id => homeWidgetDrafts.has(id), firstId)) problems.push('Widget store: successful configure retained its draft');
+    await page.getByRole('combobox', { name: 'Position of Saved title', exact: true }).selectOption('left');
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.positions[homeLayout.widgets.custom[0].id] === 'left');
+    dialog = await preview('Personal note');
+    await dialog.getByRole('textbox', { name: 'Title', exact: true }).fill('Second');
+    await dialog.getByRole('button', { name: 'Install widget', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.custom.length === 2);
+    if (layout.widgets.custom[1].id === firstId || layout.widgets.custom[0].settings.title !== 'Saved title') problems.push('Widget store: instance settings were shared');
+    await page.getByRole('checkbox', { name: 'Installed only', exact: true }).check();
+    await page.locator('#home-store-count').filter({ hasText: 'Widgets: 1' }).waitFor();
+    await page.getByRole('checkbox', { name: 'Installed only', exact: true }).uncheck();
+    await widgetManager(page, 'widgets', firstId);
+    await title.first().fill('Draft for the old template');
+    catalogue.widgets[0].revision = '1.1.0'; catalogue.widgets[0].definition.detail = 'Updated defaults'; time += 60000;
+    await refresh();
+    await page.locator('#home-widgets').getByRole('button', { name: 'Update to 1.1.0', exact: true }).first().click();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.custom[0].template.revision === '1.1.0');
+    if (!layout.widgets.custom[0].enabled || layout.widgets.custom[0].settings.title !== 'Saved title' || layout.widgets.positions[firstId] !== 'left' || layout.widgets.custom[1].template.revision !== '1.0.0') problems.push('Widget store: update lost settings, position or instance isolation');
+    if (await title.first().inputValue() !== 'Saved title' || await page.evaluate(id => homeWidgetDrafts.has(id), firstId)) problems.push('Widget store: a template update reused an old settings draft');
+    const downloadPromise = page.waitForEvent('download');
+    await page.locator('#home-widgets').getByRole('button', { name: 'Export widget', exact: true }).first().click();
+    const exported = JSON.parse(fs.readFileSync(await (await downloadPromise).path(), 'utf8'));
+    if (exported.settings || exported.definition.name !== 'Movie night' || exported.fields[0].default !== 'Movie night') problems.push('Widget store: export exposed instance settings');
+    await widgetManager(page, 'store');
+    const submission = new URL(await page.getByRole('link', { name: 'Submit a widget', exact: true }).getAttribute('href'));
+    if (submission.pathname !== '/rsm23/glasshouse/issues/new' || !submission.searchParams.get('body').includes('## Widget JSON')) problems.push('Widget store: prefilled submission link missing');
+    failInstall = true;
+    dialog = await preview('Daily reminder');
+    await dialog.getByRole('button', { name: 'Install widget', exact: true }).click();
+    await page.locator('#home-store-preview [data-widget-error]').filter({ hasText: 'Test installation refused' }).waitFor({ state: 'visible' });
+    await page.waitForFunction(() => !homeSaving);
+    if (layout.widgets.custom.length !== 2) problems.push('Widget store: a failed installation changed saved widgets');
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click(); failInstall = false;
+    offline = true; init();
+    await refresh();
+    await page.getByText('Showing the included catalogue. Online sources are unavailable; try again later.', { exact: true }).waitFor();
+    dialog = await preview('TV temperature');
+    await dialog.getByRole('spinbutton', { name: 'Decimal places', exact: true }).fill('999');
+    if (!await dialog.getByRole('spinbutton', { name: 'Decimal places', exact: true }).evaluate(input => input.validity.rangeOverflow)) problems.push('Widget store: invalid setting did not get validation feedback');
+    await dialog.getByRole('spinbutton', { name: 'Decimal places', exact: true }).fill('2');
+    await dialog.getByRole('combobox', { name: 'Chart style', exact: true }).selectOption('bar');
+    if (await dialog.locator('.wk-chart rect').count() !== 6) problems.push('Widget store: chart setting did not update preview');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.evaluate(() => { closeNav(); document.documentElement.setAttribute('data-theme', 'light'); });
+    if (await dialog.evaluate(el => el.scrollWidth > el.clientWidth + 1)) problems.push('Widget store: preview overflows on a phone');
+    await dialog.getByRole('button', { name: 'Install widget', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving && homeLayout.widgets.custom.length === 3);
+    await widgetManager(page, 'widgets', layout.widgets.custom[2].id);
+    const precision = page.locator('#home-widgets').getByRole('spinbutton', { name: 'Decimal places', exact: true });
+    await precision.fill('');
+    await refresh();
+    await page.waitForFunction(() => !homeStoreLoading);
+    if (await precision.inputValue() !== '') problems.push('Widget store: refresh converted an empty numeric draft to zero');
+    await precision.fill('1');
+    await precision.locator('..').locator('..').getByRole('button', { name: 'Save widget', exact: true }).click();
+    await page.waitForFunction(() => !homeSaving);
+    if (layout.widgets.custom[2].settings.precision !== 1) problems.push('Widget store: numeric draft was not saved as a number');
+    const drafts = [
+      { version: 1, type: 'text', id: 'draft-text', name: 'Draft text', value: 'Saved value', detail: '' },
+      { version: 2, type: 'components', id: 'draft-components', name: 'Draft components', data: { source: 'static' }, components: [{ type: 'text', text: 'Saved message' }] }
+    ];
+    for (const definition of drafts) {
+      await page.evaluate(definition => homeWidgetImport(new File([JSON.stringify(definition)], 'widget.json', { type: 'application/json' })), definition);
+    }
+    const textEditor = page.locator('#home-widgets form').filter({ has: page.locator('[name="widgetValue"]') });
+    const componentEditor = page.locator('#home-widgets form').filter({ has: page.locator('[name="widgetJSON"]') });
+    const componentDraft = Object.assign({}, drafts[1], { name: 'Edited components' });
+    await widgetManager(page, 'widgets', 'draft-text');
+    await textEditor.locator('[name="widgetValue"]').fill('Unsaved text');
+    page.once('dialog', dialog => dialog.dismiss());
+    await page.locator('#home-widget-manager').getByRole('button', { name: 'Close', exact: true }).click();
+    if (!await page.locator('#home-widget-manager').isVisible() || await textEditor.locator('[name="widgetValue"]').inputValue() !== 'Unsaved text') problems.push('Widget manager: cancelling close lost the draft');
+    await widgetManager(page, 'widgets', 'draft-components');
+    await componentEditor.locator('textarea').fill(JSON.stringify(componentDraft));
+    await refresh();
+    await page.waitForFunction(() => !homeStoreLoading);
+    if (await componentEditor.locator('textarea').inputValue() !== JSON.stringify(componentDraft)) problems.push('Widget store: refresh discarded a component draft');
+    await widgetManager(page, 'widgets', 'draft-text');
+    if (await textEditor.locator('[name="widgetValue"]').inputValue() !== 'Unsaved text') problems.push('Widget store: switching widgets discarded a text draft');
+    failLayout = true;
+    for (const [editor, id] of [[textEditor, 'draft-text'], [componentEditor, 'draft-components']]) {
+      await widgetManager(page, 'widgets', id);
+      await editor.getByRole('button', { name: 'Save widget', exact: true }).click();
+      await page.waitForFunction(() => !homeSaving);
+      const actual = await editor.locator(id === 'draft-text' ? '[name="widgetValue"]' : 'textarea').inputValue();
+      if (actual !== (id === 'draft-text' ? 'Unsaved text' : JSON.stringify(componentDraft))) problems.push('Widget store: rejected save discarded the draft for ' + id);
+    }
+    failLayout = false;
+    for (const [editor, id] of [[textEditor, 'draft-text'], [componentEditor, 'draft-components']]) {
+      await widgetManager(page, 'widgets', id);
+      await editor.getByRole('button', { name: 'Save widget', exact: true }).click();
+      await page.waitForFunction(() => !homeSaving);
+    }
+    if (layout.widgets.custom.find(widget => widget.id === 'draft-text').value !== 'Unsaved text' || layout.widgets.custom.find(widget => widget.id === 'draft-components').name !== 'Edited components' || await page.evaluate(() => homeWidgetDrafts.has('draft-text') || homeWidgetDrafts.has('draft-components'))) problems.push('Widget store: successful text or component save did not commit and clear its draft');
+    await widgetManager(page, 'widgets', 'draft-text');
+    await textEditor.locator('[name="widgetValue"]').fill('Discard on close');
+    page.once('dialog', dialog => dialog.accept());
+    await page.keyboard.press('Escape');
+    if (await page.locator('#home-widget-manager').isVisible() || await page.evaluate(() => homeWidgetDrafts.size)) problems.push('Widget manager: confirmed close did not discard drafts');
+    await widgetManager(page, 'widgets', 'draft-text');
+    if (await textEditor.locator('[name="widgetValue"]').inputValue() !== 'Unsaved text') problems.push('Widget manager: discarding a draft changed the saved widget');
+    await textEditor.locator('[name="widgetValue"]').fill('Discard on removal');
+    await page.evaluate(() => homeWidgetRemove('draft-text'));
+    await page.waitForFunction(() => !homeSaving);
+    if (await page.evaluate(() => homeWidgetDrafts.has('draft-text'))) problems.push('Widget store: removal retained an editor draft');
+    writable = false;
+    await page.reload();
+    await widgetManager(page, 'store');
+    dialog = await preview('Personal note');
+    if (!await dialog.getByRole('button', { name: 'Install widget', exact: true }).isDisabled()) problems.push('Widget store: read-only installation was enabled');
+    await dialog.getByText('Widget changes are unavailable while controls are disabled or a save is in progress.', { exact: true }).waitFor();
+    await page.keyboard.press('Escape');
+    await page.goto(base + '/assets/home.html');
+    await page.locator('#widget-' + firstId).waitFor();
+    if (!(await page.locator('#widget-' + firstId).innerText()).includes('<b>First reminder</b>')) problems.push('Widget store: resolved instance did not reach Home');
+  } finally { await page.close(); }
+}
+
 async function visitHomeVisibility(browser, base, problems) {
   const page = await browser.newPage();
   page.on('pageerror', e => problems.push('Home visibility: ' + e.message));
@@ -624,8 +1544,8 @@ async function visitHomeVisibility(browser, base, problems) {
       when: getComputedStyle(document.getElementById('when')).visibility,
       rowTop: document.querySelector('.row').getBoundingClientRect().top,
       rowsBottom: document.getElementById('rows').getBoundingClientRect().bottom,
-      // The last row shown: an empty one is left out.
-      lastBottom: [].slice.call(document.querySelectorAll('.row')).filter(r => r.offsetHeight).pop().getBoundingClientRect().bottom
+      // The row in focus: along the bottom, the rows after it wait below the screen.
+      lastBottom: document.querySelector('.row.active').getBoundingClientRect().bottom
     }));
     const centred = await place();
     layout.showClock = false;
@@ -635,7 +1555,7 @@ async function visitHomeVisibility(browser, base, problems) {
     await release();
     const bottom = await place();
     if (bottom.when !== 'hidden') problems.push('Home visibility: the clock stayed with it switched off');
-    // Only a row's own margin is left below the last row.
+    // Only a row's own margin is left below the row in focus.
     const gap = p => p.rowsBottom - p.lastBottom;
     if (!(bottom.rowTop > centred.rowTop) || !(gap(bottom) < gap(centred) / 3)) {
       problems.push('Home visibility: the rows are not along the bottom: ' + JSON.stringify({ centred, bottom }));
@@ -945,7 +1865,7 @@ async function visitHomeFadeAndInputs(browser, base, problems) {
     // Netflix, the first tile: dark at once, opened only once the fade is over.
     await page.keyboard.press('Enter');
     const pressedAt = Date.now();
-    await page.waitForTimeout(80);
+    await waitUntil(page, faded);
     if (!await faded()) problems.push('Home fade: opening a tile did not fade out');
     if (opened.length) problems.push('Home fade: the tile opened before the fade was over');
     await waitUntil(page, () => opened.length > 0);
@@ -1326,7 +2246,7 @@ async function visitHomeOrder(browser, base, problems) {
     if (await appTiles() !== 'One,Two,LG Home') problems.push('Home order: an edit can be lost while the saved order is loading');
     releaseCatalogue();
     await saved;
-    await page.waitForTimeout(200);
+    await waitUntil(page, async () => saves.length && saves[0].sort && saves[0].sort.app === 'recent' && await appTiles() === 'Two,One,LG Home');
     if (!saves.length || !saves[0].sort || saves[0].sort.app !== 'recent') problems.push('Home order: the Apps row\'s Order did not save Last opened');
     if (await appTiles() !== 'Two,One,LG Home') problems.push('Home order: arranging did not show the row in last opened order');
     // Picking a tile up keeps the order shown, now the row's own.
@@ -1377,11 +2297,34 @@ async function visitHomeOrder(browser, base, problems) {
     await saved;
     if (saves[saves.length - 1].sort.app !== 'custom') problems.push('Home order: the Home tab did not save Your order');
 
+    layout.folder = ['two'];
+    layout.hiddenRows = ['ch'];
     await page.goto(base + '/assets/dashboard.html?tab=home');
-    await page.waitForFunction(() => document.body.innerText.indexOf('Your order') !== -1);
-    // One for Apps and one for Channels: the fixture has no inputs, and an empty row has no section.
-    const orders = await page.evaluate(() => (document.body.innerText.match(/Your order|Last opened/g) || []).length);
-    if (orders !== 2) problems.push('Home order: the TV app\'s Home section has no Order for each row');
+    for (const name of ['Apps', 'Inputs', 'Channels']) {
+      const entry = page.locator('#rows .row').filter({ hasText: new RegExp('^' + name) }).first();
+      await entry.click();
+      if (name === 'Apps') {
+        const peek = await page.locator('#hintPeek span').allTextContents();
+        if (peek.join(',') !== 'One,LG Home,More apps' || !(await entry.innerText()).includes('2 of 3 shown')) {
+          problems.push('Home order: the TV app preview counted folder apps as individual row tiles');
+        }
+      }
+      if (name === 'Channels' && !(await entry.innerText()).includes('Hidden')) problems.push('Home order: the TV app did not mark a hidden row');
+      await page.keyboard.press('Enter');
+      const order = page.locator('#rows .row.sel').filter({ hasText: /^Order/ });
+      await order.waitFor();
+      if (name === 'Apps' && !(await page.locator('#rows .row').filter({ hasText: /^Two/ }).innerText()).includes('In More apps')) {
+        problems.push('Home order: a folder app was labelled Shown in the TV app');
+      }
+      saved = page.waitForResponse(r => new URL(r.url()).pathname === '/api/home/layout');
+      await page.keyboard.press('Enter');
+      await saved;
+      await order.filter({ hasText: 'Last opened' }).waitFor();
+      const kind = { Apps: 'app', Inputs: 'dev', Channels: 'ch' }[name];
+      if (saves[saves.length - 1].sort[kind] !== 'recent') problems.push('Home order: the TV app did not save Order for ' + name);
+      await page.keyboard.press('ArrowLeft');
+      await page.locator('#rows .row.sel').filter({ hasText: new RegExp('^' + name) }).waitFor();
+    }
   } finally { await page.close(); }
 }
 
@@ -1429,7 +2372,7 @@ async function visitHomeEditor(browser, base, problems) {
     await page.getByRole('button', { name: 'Show channels', exact: true }).click();
     const add = id => page.locator('#home-ch-list .prot-row').filter({ hasText: id + ' ' + id.toUpperCase() }).getByRole('button', { name: 'Add', exact: true });
     await add('b').click();
-    await page.waitForTimeout(100);
+    await waitUntil(page, () => add('c').isDisabled());
     if (!await add('c').isDisabled()) problems.push('Home editor: controls remain enabled during a pending save');
     await add('c').click({ force: true });
     await page.waitForTimeout(100);
@@ -1544,6 +2487,116 @@ async function visitHomeUploads(browser, base, problems) {
     if (!await card(page, 'evening').evaluate(el => el.classList.contains('has'))) problems.push('Home uploads: removing Morning took Evening\'s picture too');
     await page.locator('#home-wall-clear').click();
     await page.waitForFunction(() => !document.querySelector('.wall-card.has'));
+  } finally { await context.close(); }
+}
+
+/*
+ * Your own pictures, shuffled. On the Home tab: choosing it shows the
+ * collection rather than the times of day, three images chosen at once are
+ * uploaded one after another, the interval is saved, and Remove takes one
+ * picture and Remove all the rest. On the view: a picture shows, and as the
+ * minutes pass each of the others comes in turn before any comes again.
+ */
+async function visitHomeShuffle(browser, base, problems) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  page.on('pageerror', e => problems.push('Home shuffle: ' + e.message));
+  const layout = { rows: ['app'], order: { app: [], dev: [], ch: [] }, hidden: { app: [], dev: [], ch: [] },
+    channels: [], hintSeen: true, searchHintSeen: true, wallAnim: 'off', wallShuffleMinutes: 10, shuffleMinutes: [1, 5, 10, 15, 30, 60] };
+  let choice = 'own', pictures = [], made = 0, image = null;
+  const saved = [];
+  const wallpapers = () => ({ available: choice === 'shuffle' ? pictures.length > 0 : false, uploading: false, choice,
+    choices: ['black', 'landscape', 'abstract', 'own', 'shuffle'], pictures: pictures.slice(), maxPictures: 50,
+    slots: { morning: false, afternoon: false, evening: false, night: false }, revision: choice + pictures.length });
+  await context.route('**/api/home**', async route => {
+    const url = new URL(route.request().url());
+    const pathname = url.pathname;
+    let body;
+    if (pathname === '/api/home/wallpaper') return route.fulfill({ contentType: 'image/jpeg', body: image || Buffer.alloc(0) });
+    if (pathname.endsWith('/upload')) {
+      if (url.searchParams.get('slot') !== 'shuffle') problems.push('Home shuffle: a picture went to a time of day');
+      image = route.request().postDataBuffer();
+      pictures.push('pic' + String(++made).padStart(6, '0'));
+      choice = 'shuffle';
+      body = { ok: true, wallpapers: wallpapers() };
+    } else if (pathname === '/api/home/wallpapers') {
+      const req = route.request().postDataJSON();
+      if (req.removePictures) pictures = [];
+      else if (req.removePicture) pictures = pictures.filter(id => id !== req.removePicture);
+      else if (req.choose) choice = req.choose;
+      body = { ok: true, wallpapers: wallpapers() };
+    } else if (pathname === '/api/home/layout') {
+      const req = route.request().postDataJSON();
+      saved.push(req);
+      Object.assign(layout, req);
+      body = { ok: true, layout, layoutVersion: 1 };
+    } else if (pathname === '/api/home') {
+      body = { ok: true, supported: { ok: true }, installed: true, enabled: true, writable: true, layout, wallpapers: wallpapers() };
+    } else if (pathname.endsWith('/catalogue')) {
+      body = { ok: true, layout, layoutVersion: 1, apps: [{ id: 'app', title: 'App' }], devices: [], channels: [], sources: {},
+        order: { app: ['app'], dev: [], ch: [] }, wallpapers: wallpapers() };
+    } else if (pathname.endsWith('/now')) {
+      body = { kind: null };
+    } else {
+      // The heartbeat carries the wallpapers too, as the server's does.
+      body = { ok: true, layout, build: 'shuffle', layoutVersion: 1, wallpapers: wallpapers(), apps: [], devices: [], channels: [], order: { app: [], dev: [], ch: [] }, sources: { channels: 0 } };
+    }
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
+  });
+  try {
+    await page.goto(base + '/?tab=home');
+    await page.waitForFunction(() => typeof homeStatus !== 'undefined' && homeStatus && homeCat);
+    await page.locator('#home-wall-choice button', { hasText: 'Your own, shuffled' }).click();
+    await page.waitForSelector('#home-shuffle-add:not(:disabled)');
+    if (await page.locator('#home-walls').isVisible()) problems.push('Home shuffle: the times of day showed with the collection chosen');
+    const chooser = page.waitForEvent('filechooser');
+    await page.locator('#home-shuffle-add').click();
+    const icon = path.join(ASSETS, 'dashboard-app/assets/icon130.png');
+    await (await chooser).setFiles([icon, icon, icon]);
+    await page.waitForFunction(() => document.querySelectorAll('#home-shuffle [data-picture]').length === 3, null, { timeout: 15000 });
+    if (made !== 3) problems.push('Home shuffle: three images chosen made ' + made + ' uploads');
+    await page.selectOption('#home-shuffle-minutes', '5');
+    await page.waitForFunction(() => homeLayout && homeLayout.wallShuffleMinutes === 5);
+    if (!saved.some(r => r.wallShuffleMinutes === 5)) problems.push('Home shuffle: the interval was not saved as a number');
+    await page.locator('#home-shuffle [data-picture="pic000001"]').getByRole('button', { name: 'Remove', exact: true }).click();
+    await page.waitForFunction(() => !document.querySelector('#home-shuffle [data-picture="pic000001"]'));
+    if (pictures.length !== 2) problems.push('Home shuffle: Remove took more than one picture');
+    await page.locator('#home-wall-clear').click();
+    await page.waitForFunction(() => !document.querySelector('#home-shuffle [data-picture]'));
+    // On the view, with four pictures and a minute each.
+    pictures = ['pica', 'picb', 'picc', 'picd'].map(id => id + '00000');
+    layout.wallShuffleMinutes = 1;
+    const view = await context.newPage({ viewport: { width: 1920, height: 1080 } });
+    view.on('pageerror', e => problems.push('Home shuffle view: ' + e.message));
+    await view.clock.install();
+    await view.goto(base + '/assets/home.html');
+    // The page's own timers run only as the clock is moved on.
+    for (let i = 0; i < 40 && !await view.locator('.tile').count(); i++) {
+      await view.clock.runFor(500);
+      await view.waitForTimeout(50);
+    }
+    const shown = () => view.evaluate(() => {
+      const front = Array.prototype.filter.call(document.querySelectorAll('#wall .layer'), l => +l.style.opacity > 0)[0];
+      const m = front && /id=([0-9a-z]+)/.exec(front.style.backgroundImage);
+      return m ? m[1] : null;
+    });
+    const seen = [];
+    for (let i = 0; i < 4; i++) {
+      if (i) await view.clock.runFor(76000);
+      // The next picture shows once it has loaded, which takes real time on a slow machine.
+      const before = seen[seen.length - 1] || null;
+      let id = null;
+      for (let k = 0; k < 100 && (!(id = await shown()) || id === before); k++) {
+        await view.clock.runFor(200);
+        await view.waitForTimeout(50);
+      }
+      seen.push(id);
+    }
+    if (new Set(seen).size !== 4 || seen.some(id => pictures.indexOf(id) === -1)) {
+      problems.push('Home shuffle: four minutes did not show each of four pictures once: ' + seen.join(', '));
+    }
+  } catch (e) {
+    problems.push('Home shuffle: ' + e.message);
   } finally { await context.close(); }
 }
 
@@ -1676,9 +2729,15 @@ async function visitHomeAvailability(browser, base, problems) {
     { name: 'webOS 10\'s banner', st: { available: true, enabled: false, lgHomeAvailable: true, homeAutoLaunch: false,
       lgHome: lgHome(false, { choice: 'black', own: false, width: 3492, height: 1685 }) }, glasshouse: false, banner: true },
     { name: 'Glasshouse Home on', st: { available: true, enabled: true, lgHomeAvailable: true, lgHome: lgHome(true) }, glasshouse: true },
-    // webOS 5 and 6, where each switch restarts the app manager: their note shows there only.
+    // Keep restartsApps coverage alongside webOS 6 standalone (keeps preview options) and webOS 4 (hides them).
+    { name: 'restartsApps', st: { available: true, enabled: true, lgHomeAvailable: true, lgHome: lgHome(true),
+      supported: { ok: true, experimental: true, restartsApps: true } }, glasshouse: true },
     { name: 'webOS 6', st: { available: true, enabled: true, lgHomeAvailable: true, lgHome: lgHome(true),
-      supported: { ok: true, experimental: true, restartsApps: true } }, glasshouse: true }
+      supported: { ok: true, webos: '6.5.3', experimental: true, standalone: true },
+      layout: { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] }, hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true, searchHintSeen: true, livePreview: true } }, glasshouse: true, previewOptions: true },
+    { name: 'webOS 4', st: { available: true, enabled: true, lgHomeAvailable: true, lgHome: lgHome(true),
+      supported: { ok: true, webos: '4.4.3', experimental: true, standalone: true, previewOptions: false },
+      layout: { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] }, hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true, searchHintSeen: true, livePreview: true } }, glasshouse: true, previewOptions: false }
   ];
   for (const c of cases) {
     const st = c.st;
@@ -1704,6 +2763,11 @@ async function visitHomeAvailability(browser, base, problems) {
       const restarts = !!(st.supported && st.supported.restartsApps);
       if (c.glasshouse && await page.locator('#home-restart-note').isVisible() !== restarts) {
         fail('the note that a switch closes apps ' + (restarts ? 'missing' : 'shown on a TV it does not apply to'));
+      }
+      if (c.previewOptions !== undefined) {
+        for (const id of ['#home-preview-sound-row', '#home-preview-always-row', '#home-preview-tile-row']) {
+          if (await page.locator(id).isVisible() !== c.previewOptions) fail(id + ' ' + (c.previewOptions ? 'missing' : 'shown'));
+        }
       }
       if (await page.locator('#disc-system-tiles').isVisible() === c.glasshouse) fail('system apps ' + (c.glasshouse ? 'shown with Glasshouse Home on' : 'missing'));
       if (st.homeAutoLaunch !== undefined && (!await page.locator('#home-autolaunch').isVisible() || await page.locator('#home-autolaunch').isDisabled()))
@@ -2302,7 +3366,8 @@ async function visitHomeInternetTv(browser, base, problems) {
     { id: 'p1:x2', pl: 'p1', key: 'x2', name: 'VIP: BBC WORLD NEWS \u1d34\u1d30', group: 'UK| NEWS \u1d34\u1d30', number: '2' }
   ];
   const now = Date.now(), half = 30 * 60000, at = Math.floor(now / half) * half;
-  const leases = [], streams = [];
+  const leases = [], streams = [], outputs = {};
+  let refuseOutput = false, holdOutput = false, finishOutput = null;
   let favourites = true, previewInTile = false;
   await page.route('**/api/home/**', route => {
     const url = new URL(route.request().url());
@@ -2322,7 +3387,18 @@ async function visitHomeInternetTv(browser, base, problems) {
     if (url.pathname.endsWith('/lineup')) return reply({ ok: true, revision: 1, channels: tv,
       sections: [{ id: 'news', kind: 'pick', name: 'News' }], favourites: favourites ? tv.map(c => c.id) : [] });
     if (url.pathname.endsWith('/guide')) return reply({ ok: true, guide: { 'p1:x1': [{ start: at, end: at + half * 2, title: 'The World This Weekend' }] } });
-    if (url.pathname.endsWith('/stream')) { streams.push(url.searchParams.get('key')); trace.push('request ' + url.searchParams.get('key')); return reply({ ok: true, url: 'http://s.test/' + url.searchParams.get('key') + '.m3u8', format: 'hls' }); }
+    if (url.pathname.endsWith('/stream')) {
+      const key = url.searchParams.get('key'), ts = outputs[key] === 'ts';
+      streams.push(key); trace.push('request ' + key);
+      return reply({ ok: true, url: 'http://s.test/' + key + (ts ? '.ts' : '.m3u8'), format: ts ? 'ts' : 'hls', switchable: true });
+    }
+    if (url.pathname.endsWith('/output')) {
+      const body = req.postDataJSON();
+      if (refuseOutput) return reply({ ok: false, error: 'save' });
+      outputs[body.key] = body.output;
+      if (holdOutput) { finishOutput = () => reply({ ok: true }); return; }
+      return reply({ ok: true });
+    }
     if (url.pathname.endsWith('/lease')) { leases.push(JSON.parse(req.postData() || '{}')); return reply({ ok: true }); }
     if (url.pathname.endsWith('/schedule')) {
       // Filed by the UTC day each programme starts, as the worker writes them.
@@ -2334,7 +3410,10 @@ async function visitHomeInternetTv(browser, base, problems) {
     if (url.pathname.endsWith('/groups')) return reply({ ok: true, groups: [{ name: 'UK| NEWS', count: 2 }], total: 1, channels: 2 });
     return reply({ ok: true });
   });
-  const key = code => page.evaluate(k => { for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { keyCode: k, bubbles: true })); }, code);
+  const keys = codes => page.evaluate(list => {
+    for (const code of list) for (const type of ['keydown', 'keyup']) document.dispatchEvent(new KeyboardEvent(type, { keyCode: code, bubbles: true }));
+  }, codes);
+  const key = code => keys([code]);
   const playing = () => page.locator('#pvVideo').dispatchEvent('playing');
   const fillsTile = () => page.evaluate(() => {
     const tile = document.querySelector('.row.active .tile.focus'), pv = document.getElementById('preview');
@@ -2347,24 +3426,57 @@ async function visitHomeInternetTv(browser, base, problems) {
     await page.waitForSelector('.row[data-key="iptv"] .tile');
     const names = await page.locator('.row[data-key="iptv"] .tile .nm').allTextContents();
     if (names[0] !== 'BBC News' || names[2] !== 'Guide') fail('row names ' + JSON.stringify(names));
-    await page.waitForTimeout(900);
+    await page.waitForFunction(() => window.played.includes('http://s.test/x1.m3u8'));
     if (streams[0] !== 'x1' || !(await page.evaluate(() => window.played)).includes('http://s.test/x1.m3u8')) fail('the focused channel was not previewed');
-    if (!leases.some(l => l.on === true && l.full === false)) fail('no lease while previewing');
+    if (!await waitUntil(page, () => leases.some(l => l.on === true && l.full === false))) fail('no lease while previewing');
     await playing();
-    await page.waitForTimeout(100);
     await key(13);
-    await page.waitForTimeout(400);
+    await page.waitForSelector('#preview.full');
     if (!/full/.test(await page.locator('#preview').getAttribute('class'))) fail('OK did not grow the preview to the player');
+    if (await page.locator('#widgets').isVisible()) fail('top widgets stayed visible over the full-screen player');
     if (streams.length !== 1) fail('the preview grown to the player opened the stream again');
-    if (!leases.some(l => l.full === true)) fail('the player did not say it is full screen');
+    if (!await waitUntil(page, () => leases.some(l => l.full === true))) fail('the player did not say it is full screen');
+    await page.waitForFunction(() => document.getElementById('bdFmt').textContent.includes('Yellow: play as MPEG-TS'));
+    await key(405);
+    await page.waitForFunction(() => /x1\.ts/.test(document.getElementById('pvVideo').getAttribute('src')));
+    await playing();
+    if (!(await page.locator('#bdFmt').textContent()).includes('Yellow: play as HLS')) fail('Yellow did not switch the adopted preview to MPEG-TS');
+
+    refuseOutput = true;
+    const beforeRefused = streams.length;
+    await key(405);
+    await page.waitForFunction(() => document.getElementById('pmsg').textContent.includes('That didn’t save'));
+    if (streams.length !== beforeRefused) fail('a refused format save silently reopened the old stream');
     await key(13);
-    await page.waitForTimeout(300);
+    await page.waitForFunction(() => /x1\.ts/.test(document.getElementById('pvVideo').getAttribute('src')));
+    await playing();
+    refuseOutput = false;
+
+    holdOutput = true;
+    const pendingOutput = page.waitForRequest(r => new URL(r.url()).pathname === '/api/iptv/output');
+    await key(405);
+    await pendingOutput;
+    await key(461);
+    await page.waitForFunction(() => !!document.getElementById('pvVideo').getAttribute('src'));
+    await playing();
+    await key(13);
+    const beforeLate = streams.length;
+    const lateOutput = page.waitForResponse(r => new URL(r.url()).pathname === '/api/iptv/output');
+    await finishOutput();
+    await lateOutput;
+    // A reply from the previous player must not reopen the newly adopted stream.
+    await page.waitForTimeout(100);
+    if (streams.length !== beforeLate) fail('a late format save reopened a player that had been left');
+    holdOutput = false;
+
+    await key(13);
+    await page.waitForSelector('#player.list');
     if (!/list/.test(await page.locator('#player').getAttribute('class'))) fail('OK in the player did not open the channel list');
     const releasedBefore = await page.evaluate(() => window.released);
     await key(40);
     await key(13);
-    await page.waitForTimeout(900);
-    if (streams[1] !== 'x2') fail('choosing a channel in the list did not play it');
+    await page.waitForFunction(() => window.played.includes('http://s.test/x2.m3u8'));
+    if (streams[streams.length - 1] !== 'x2') fail('choosing a channel in the list did not play it');
     if (await page.evaluate(() => window.released) <= releasedBefore) fail('the last stream was not released before the next');
     const asked = trace.lastIndexOf('request x2'), playedNext = trace.lastIndexOf('play http://s.test/x2.m3u8');
     const releasedAt = trace.slice(0, asked).lastIndexOf('release'), lastOld = trace.slice(0, asked).lastIndexOf('play http://s.test/x1.m3u8');
@@ -2374,11 +3486,12 @@ async function visitHomeInternetTv(browser, base, problems) {
     if (/playing/.test(await page.locator('#stage').getAttribute('class'))) fail('Back did not close the player');
     // OK before the preview's dwell is over: one stream, full screen, and the preview's timer gone with it.
     await key(37);
-    await page.waitForTimeout(800);
+    await page.waitForFunction(() => document.getElementById('pvVideo').getAttribute('src') === 'http://s.test/x1.m3u8');
     const before = streams.length;
-    await key(39);
-    await page.waitForTimeout(100);
-    await key(13);
+    // One event turn keeps OK before the dwell even when the runner is busy.
+    await keys([39, 13]);
+    await page.waitForFunction(() => document.getElementById('pvVideo').getAttribute('src') === 'http://s.test/x2.m3u8');
+    // No second request may arrive from the preview timer after the player opens.
     await page.waitForTimeout(1500);
     if (streams.length !== before + 1) fail('OK during the preview\'s dwell opened ' + (streams.length - before) + ' streams');
     if (!/full/.test(await page.locator('#preview').getAttribute('class'))) fail('a late preview timer took the player\'s picture back');
@@ -2389,10 +3502,10 @@ async function visitHomeInternetTv(browser, base, problems) {
     if (await page.locator('#guide .gc b').first().textContent() !== 'The World This Weekend') fail('the guide did not show the schedule');
     const guideRow = () => page.locator('#gBody .gr.focus').getAttribute('data-g');
     await key(34);
-    await page.waitForTimeout(100);
+    await waitUntil(page, async () => await guideRow() === '1');
     if (await guideRow() !== '1') fail('Channel down did not turn the guide a page, to its last channel');
     await key(33);
-    await page.waitForTimeout(100);
+    await waitUntil(page, async () => await guideRow() === '0');
     if (await guideRow() !== '0') fail('Channel up did not turn the guide back a page');
     await key(461);
     await page.waitForTimeout(200);
@@ -2404,9 +3517,10 @@ async function visitHomeInternetTv(browser, base, problems) {
     await page.evaluate(() => document.dispatchEvent(new KeyboardEvent('keyup', { keyCode: 13, bubbles: true })));
     for (let i = 0; i < 4; i++) await key(39);
     await key(13);
-    await page.waitForTimeout(500);
+    await waitUntil(page, async () => /adding/.test(await page.locator('#stage').getAttribute('class')));
     if (!/adding/.test(await page.locator('#stage').getAttribute('class'))) fail('the Add channels tile did not open the panel');
-    else if (!/UK News/.test(await page.locator('#adItems').textContent())) fail('the add panel did not list the playlist\'s groups');
+    // The panel opens before its list of the playlist's groups is read.
+    else if (!await waitUntil(page, async () => /UK News/.test(await page.locator('#adItems').textContent()))) fail('the add panel did not list the playlist\'s groups');
     previewInTile = true;
     await page.goto(base + '/assets/home.html');
     await page.waitForFunction(() => !!document.getElementById('pvVideo').getAttribute('src'));
@@ -2419,7 +3533,7 @@ async function visitHomeInternetTv(browser, base, problems) {
     if (!full || full.width < 1900 || full.height < 1060) fail('the tile preview did not fill the screen');
     if (streams.length !== beforeTile) fail('opening the tile preview reopened its stream');
     await key(461);
-    await page.waitForTimeout(300);
+    await waitUntil(page, fillsTile);
     if (!await fillsTile()) fail('Back did not return the stream to its tile');
     if (streams.length !== beforeTile) fail('returning to the tile reopened its stream');
     await key(457);
@@ -2494,32 +3608,32 @@ async function visitIptvChannels(browser, base, problems) {
     await page.waitForSelector('.tvm-c');
     if (await page.locator('.tvm-c').count() !== 2) fail('the group\'s channels were not listed');
     await page.click('button:has-text("Add the whole group")');
-    await page.waitForTimeout(300);
+    await waitUntil(page, () => posts.some(p => p.action === 'add-group' && p.group === 'UK | Sport' && p.pl === 'p1'));
     if (!posts.some(p => p.action === 'add-group' && p.group === 'UK | Sport' && p.pl === 'p1')) fail('Add the whole group did not add it: ' + JSON.stringify(posts));
     // A section folded away is opened; with none, page.click would wait out its 30 s.
     const folded = page.locator('.tvm-sec button[aria-expanded="false"]');
     if (await folded.count()) await folded.first().click();
     await page.waitForSelector('.tvm-lc .star');
     await page.locator('.tvm-lc .star').first().click();
-    await page.waitForTimeout(300);
+    await waitUntil(page, () => posts.some(p => p.action === 'star' && p.id === 'p1:x1'));
     if (!posts.some(p => p.action === 'star' && p.id === 'p1:x1')) fail('the star did not star the channel');
     // A run selected with Shift, and the bar adding all of it in one edit.
     await page.click('.tvm-c >> nth=0');
     await page.click('.tvm-c >> nth=1', { modifiers: ['Shift'] });
     await page.waitForSelector('#tvm-dock:not([hidden])');
     await page.click('#tvm-dock button:has-text("Add 2 to the lineup")');
-    await page.waitForTimeout(300);
+    await waitUntil(page, () => posts.some(p => p.action === 'add' && p.channels && p.channels.length === 2));
     if (!posts.some(p => p.action === 'add' && p.channels && p.channels.length === 2)) fail('the bar did not add the selected channels in one edit: ' + JSON.stringify(posts.slice(-1)));
     // A lineup channel selected, Delete takes it out; Escape clears a selection before it closes the page.
     await page.click('.tvm-lc .tvm-c-name >> nth=1');
     await page.keyboard.press('Delete');
-    await page.waitForTimeout(300);
+    await waitUntil(page, () => posts.some(p => p.action === 'remove' && p.ids && p.ids[0] === 'p1:x2'));
     if (!posts.some(p => p.action === 'remove' && p.ids && p.ids[0] === 'p1:x2')) fail('Delete did not take the selected channel out');
     await page.click('.tvm-lc .tvm-c-name >> nth=0');
     await page.keyboard.press('Escape');
     if (await page.locator('#tvm').isHidden()) fail('Escape closed the page rather than clearing the selection');
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(200);
+    await waitUntil(page, () => page.locator('#tvm').isHidden());
     if (!(await page.locator('#tvm').isHidden())) fail('Escape did not close the page');
     if (/tv=channels/.test(page.url())) fail('the address still opens the page');
     await page.route('**/api/iptv/playlists', r => r.fulfill({ json: { ok: true, writable: true,
@@ -2567,11 +3681,14 @@ async function visitIptvChannels(browser, base, problems) {
     await route(page);
     await page.route('**/api/home?*', r => r.fulfill({ json: {
       ok: true, supported: { ok: true }, enabled: true, writable: true,
-      layout: { rows: ['iptv'], order: { iptv: [] }, sort: {}, hidden: {}, channels: [] },
-      catalogue: { sources: { iptv: true }, order: { iptv: [] }, iptv: [] }
+      layout: { rows: ['iptv'], order: { iptv: [] }, sort: { iptv: 'recent' }, hidden: {}, channels: [] },
+      catalogue: { apps: [], devices: [], channels: [], sources: { iptv: true },
+        order: { iptv: ['p1:x2', 'p1:x1'] }, iptv: channels }
     } }));
     await page.goto(base + '/assets/dashboard.html?tab=home');
-    await page.locator('#rows .row').filter({ hasText: 'Internet TV channels' }).click();
+    await page.locator('#rows .row').filter({ hasText: /^Internet TV/ }).first().click();
+    const peek = await page.locator('#hintPeek span').allTextContents();
+    if (peek.join(',') !== 'World Today,Harbour News') fail('TV app: the row preview did not follow Last opened order: ' + peek.join(','));
     await page.keyboard.press('Enter');
     await page.waitForFunction(() => rows.some(r => r.act === 'tvSection'));
     await page.evaluate(() => { sel = rows.findIndex(r => r.key === 'tvGroups'); render(); });
@@ -2583,10 +3700,10 @@ async function visitIptvChannels(browser, base, problems) {
     await page.waitForFunction(() => rows.some(r => r.act === 'tvToggle'));
     await page.evaluate(() => { sel = rows.findIndex(r => r.act === 'tvToggle'); render(); });
     await page.keyboard.press('Enter');
-    await page.waitForTimeout(300);
+    await waitUntil(page, () => posts.some(p => p.action === 'add' && p.channels && p.channels[0].key === 'x7'));
     if (!posts.some(p => p.action === 'add' && p.channels && p.channels[0].key === 'x7')) fail('TV app: OK on a channel did not add it');
     await page.keyboard.press('ArrowLeft');
-    await page.waitForTimeout(200);
+    await waitUntil(page, async () => await page.evaluate(() => sub) === 'tvGroups');
     if (await page.evaluate(() => sub) !== 'tvGroups') fail('TV app: Back from a group did not return to the groups');
   } catch (e) {
     fail('TV app: ' + e.message.split('\n')[0] + ' (tab ' + await page.evaluate(() => T().key + ', list ' + sub).catch(() => '?') + ')');
@@ -2601,16 +3718,386 @@ async function visitIptvChannels(browser, base, problems) {
  * job, its groups together, on a machine of its own: CHECK_JOB names one;
  * without it every group runs.
  */
+async function visitHuesyncSettings(browser, base, problems) {
+  const page = await browser.newPage();
+  const fail = message => problems.push('Hue Sync: ' + message);
+  page.on('pageerror', error => fail(error.message));
+  const settings = { brightness: 50, intensity: 2, sync_mode: '1', current_ec: 'area-a',
+    ec_list: [{ id: 'area-a', name: '<img src=x onerror=alert(1)>' }, { id: 'area-b', name: 'TV' }],
+    background_lightning_video: true, background_lightning_games: false, auto_start: false, auto_start_notification: true };
+  const diagnostics = { ready: { ready: true, supported: true }, bridge: { Connected: true, Authorized: true }, busy: false };
+  let writable = true, supported = true, refuse = false, streaming = true, piccapRunning = false, piccapPresent = true, huesyncPresent = true;
+  const writes = [];
+  try {
+    await page.route('**/api/stats*', async route => {
+      const response = await route.fetch();
+      const stats = await response.json();
+      delete stats.piccapCapture;
+      delete stats.huesyncStreaming;
+      if (piccapPresent) stats.piccapCapture = { running: piccapRunning, writable };
+      if (huesyncPresent) stats.huesyncStreaming = { streaming, writable, diagnostics, settings: supported ? settings : {} };
+      await route.fulfill({ json: stats });
+    });
+    await page.route('**/api/control', async route => {
+      const command = route.request().postDataJSON();
+      writes.push(command);
+      if (command.action === 'huesyncSetting' && !refuse) settings[command.value.key] = command.value.value;
+      if (command.action === 'piccap' && !refuse) piccapRunning = command.value === 'on';
+      if (command.action === 'huesync' && !refuse) streaming = command.value === 'on';
+      await route.fulfill({ json: { ok: !refuse, settings } });
+    });
+    await page.goto(base + '/?tab=advanced');
+    if (await page.locator('#advpane #row-piccap, #advpane #row-huesync').count()) fail('ambient controls remain in System');
+    const followsHome = await page.locator('#tabs [data-tab="ambient"]').evaluate(el => el.previousElementSibling.dataset.tab === 'home');
+    if (!followsHome) fail('Ambient Light does not follow Home');
+    await page.locator('#tabs [data-tab="ambient"]').click();
+    await page.waitForSelector('#huesync-settings:not([hidden])');
+    for (const key of ['background_lightning_video', 'background_lightning_games', 'auto_start', 'auto_start_notification']) {
+      const toggle = page.locator('#huesync-' + key);
+      if (!(await toggle.evaluate(el => el.tagName === 'BUTTON' && el.classList.contains('pill')))) fail(key + ' is not a standard pill toggle');
+      if (await toggle.getAttribute('aria-pressed') !== String(settings[key]) ||
+          await toggle.textContent() !== (settings[key] ? 'On' : 'Off')) fail(key + ' does not show its current state');
+    }
+    const categories = await page.locator('#ambient-huesync, #ambient-piccap').evaluateAll(els => els.filter(el => !el.hidden).map(el => el.querySelector('.pv-sec').textContent));
+    if (JSON.stringify(categories) !== JSON.stringify(['Hue Sync', 'PicCap'])) fail('integration categories are missing or in the wrong order');
+    if (await page.locator('#row-huesync .prot-title').textContent() !== 'Hue Sync Enabled' || await page.locator('#row-piccap .prot-title').textContent() !== 'PicCap Enabled') fail('enabled labels differ');
+    if (!(await page.locator('#row-piccap .prot-desc').textContent()).includes('Hyperion or HyperHDR')) fail('PicCap description omits a supported server');
+    if (await page.locator('#huesync-settings').evaluate(el => el.closest('.panel').id) !== 'ambientpane') fail('settings are on the wrong page');
+    await page.locator('#btn_piccap').click();
+    await page.waitForFunction(() => document.getElementById('btn_piccap').dataset.on === '1');
+    if (!piccapRunning || !streaming || writes.some(command => command.action === 'huesync')) fail('turning on PicCap changed Hue Sync');
+    await page.locator('#btn_huesync').click();
+    await page.waitForFunction(() => document.getElementById('btn_huesync').dataset.on === '');
+    if (!piccapRunning || writes.filter(command => command.action === 'piccap').length !== 1) fail('turning off Hue Sync changed PicCap');
+    await page.evaluate(() => showTab('control'));
+    await page.waitForSelector('#control-ambient:not([hidden])');
+    const underPlayback = await page.evaluate(() => document.getElementById('control-ambient').getBoundingClientRect().top >= document.querySelector('.playback-btns').getBoundingClientRect().bottom);
+    if (!underPlayback) fail('remote toggles are not below Playback');
+    const shortcuts = await page.locator('#control-ambient button').evaluateAll(els => els.map(el => el.querySelector('[data-t]').textContent));
+    if (JSON.stringify(shortcuts) !== JSON.stringify(['Hue Sync', 'PicCap'])) fail('remote shortcut order or short labels are wrong');
+    if (await page.locator('#ctl_piccap').getAttribute('aria-pressed') !== 'true' || await page.locator('#ctl_huesync').getAttribute('aria-pressed') !== 'false') fail('remote toggle states differ from Ambient Light');
+    await page.locator('#ctl_huesync').click();
+    await page.waitForFunction(() => document.getElementById('ctl_huesync').getAttribute('aria-pressed') === 'true' && document.getElementById('btn_huesync').dataset.on === '1');
+    await page.locator('#ctl_piccap').click();
+    await page.waitForFunction(() => document.getElementById('ctl_piccap').getAttribute('aria-pressed') === 'false' && document.getElementById('btn_piccap').dataset.on === '');
+    if (!streaming || piccapRunning) fail('remote quick toggles are not independent');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.waitForFunction(() => document.getElementById('control-playback').getBoundingClientRect().width > 300);
+    if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) fail('remote labels overflow on a phone');
+    await page.evaluate(() => showTab('ambient'));
+    if (await page.locator('#huesync-current_ec option').first().textContent() !== settings.ec_list[0].name) fail('area name was not rendered as text');
+    if (await page.locator('#huesync-settings img').count()) fail('area markup was interpreted');
+    if (await page.locator('#huesync-readiness').count()) fail('readiness paragraph is still shown');
+    if (await page.locator('#huesync-more').count()) fail('More settings submenu remains');
+    if (!(await page.locator('#huesync-auto_start').isVisible())) fail('startup switches are not directly accessible');
+    for (const [width, colorScheme] of [[390, 'light'], [1280, 'dark']]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ colorScheme });
+      if (await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)) fail('ambient page overflows at width ' + width);
+    }
+    const changes = [
+      ['brightness', 60], ['intensity', 3], ['sync_mode', '0'], ['current_ec', 'area-b'],
+      ['background_lightning_video', false], ['background_lightning_games', true], ['auto_start', true], ['auto_start_notification', false]
+    ];
+    for (const [key, value] of changes) {
+      await page.evaluate(() => tick());
+      const reply = page.waitForResponse(response => {
+        if (new URL(response.url()).pathname !== '/api/control') return false;
+        const command = response.request().postDataJSON();
+        return command.action === 'huesyncSetting' && command.value.key === key;
+      });
+      const element = page.locator('#huesync-' + key);
+      if (typeof value === 'boolean') await element.click();
+      else if (key === 'brightness') { await element.fill(String(value)); await element.blur(); }
+      else await element.selectOption(String(value));
+      const command = (await reply).request().postDataJSON();
+      await page.waitForFunction(() => !huesyncSettingsBusy);
+      if (!command || command.action !== 'huesyncSetting' || command.value.key !== key || command.value.value !== value) fail('wrong command for ' + key);
+      if (typeof value === 'boolean') {
+        await page.waitForFunction(({ key, value }) => document.getElementById('huesync-' + key).getAttribute('aria-pressed') === String(value), { key, value });
+        if (!(await element.evaluate((el, value) => el.classList.contains(value ? 'good' : 'idle'), value)) ||
+            await element.textContent() !== (value ? 'On' : 'Off')) fail(key + ' pill did not update after confirmation');
+      }
+    }
+    refuse = true;
+    await page.locator('#huesync-auto_start').click();
+    await page.waitForFunction(() => !huesyncSettingsBusy);
+    if (await page.locator('#huesync-auto_start').getAttribute('aria-pressed') !== 'true' ||
+        !(await page.locator('#huesync-auto_start').evaluate(el => el.classList.contains('good')))) fail('a refused boolean write changed its pill state');
+    await page.locator('#huesync-brightness').fill('10');
+    await page.locator('#huesync-brightness').blur();
+    await page.waitForFunction(() => !huesyncSettingsBusy);
+    if (await page.locator('#huesync-brightness').inputValue() !== '60') fail('a refused write left an optimistic value visible');
+    settings._stale = ['brightness', 'auto_start'];
+    await page.evaluate(() => tick());
+    await page.waitForFunction(() => document.querySelector('#huesync-brightness').disabled && document.querySelector('#huesync-auto_start').disabled);
+    if (!(await page.locator('#row-huesync-brightness').isVisible())) fail('a temporary failure removed the supported control');
+    delete settings._stale;
+    diagnostics.busy = true;
+    await page.evaluate(() => tick());
+    await page.waitForFunction(() => document.querySelector('#btn_huesync').disabled && document.querySelector('#ctl_huesync').disabled && document.querySelector('#huesync-auto_start').disabled);
+    diagnostics.busy = false;
+    diagnostics.bridge.Authorized = false;
+    await page.evaluate(() => tick());
+    await page.waitForFunction(() => document.querySelector('#huesync-intensity').disabled);
+    if (await page.locator('#huesync-readiness').count()) fail('authorization produced a persistent status paragraph');
+    diagnostics.bridge.Authorized = true;
+    writable = false;
+    await page.evaluate(() => tick());
+    await page.waitForFunction(() => document.querySelector('#huesync-brightness').disabled && document.querySelector('#btn_piccap').disabled && document.querySelector('#ctl_piccap').disabled && document.querySelector('#ctl_huesync').disabled);
+    for (const key of ['background_lightning_video', 'background_lightning_games', 'auto_start', 'auto_start_notification']) delete settings[key];
+    await page.evaluate(() => tick());
+    await page.waitForSelector('#row-huesync-auto_start[hidden]', { state: 'attached' });
+    if (!(await page.locator('#huesync-brightness').isVisible())) fail('primary controls disappeared with unsupported secondary settings');
+    supported = false;
+    await page.evaluate(() => tick());
+    await page.waitForSelector('#huesync-settings[hidden]', { state: 'attached' });
+    huesyncPresent = false;
+    await page.evaluate(() => tick());
+    await page.waitForSelector('#row-huesync[hidden]', { state: 'attached' });
+    if (!(await page.locator('#ambient-piccap').isVisible()) || !(await page.locator('#ambient-huesync').isHidden())) fail('missing Hue Sync left an empty category or hid PicCap');
+    if (!(await page.locator('#ctl_huesync').evaluate(el => el.hidden))) fail('missing Hue Sync left its shortcut');
+    piccapPresent = false;
+    await page.evaluate(() => tick());
+    await page.waitForFunction(() => document.getElementById('tab-btn-ambient').hidden && activeTab === 'control');
+    if (!(await page.locator('#ambientpane').isHidden())) fail('unavailable Ambient Light panel remained open');
+    if (!(await page.locator('#control-ambient').evaluate(el => el.hidden))) fail('empty remote toggle group remains visible');
+    await page.evaluate(() => showTab('ambient'));
+    if (await page.evaluate(() => activeTab) === 'ambient') fail('an unavailable Ambient Light tab can still be opened');
+    huesyncPresent = true;
+    await page.evaluate(() => tick());
+    await page.waitForFunction(() => !document.getElementById('tab-btn-ambient').hidden);
+    await page.evaluate(() => showTab('ambient'));
+    await page.waitForSelector('#row-huesync:not([hidden])');
+    if (await page.locator('#ambient-empty').isVisible()) fail('empty message remains with Hue Sync alone');
+    if (!(await page.locator('#ambient-piccap').isHidden()) || !(await page.locator('#ambient-huesync').isVisible())) fail('missing PicCap left an empty category or hid Hue Sync');
+    if (!(await page.locator('#ctl_piccap').evaluate(el => el.hidden))) fail('missing PicCap left its shortcut');
+    huesyncPresent = false;
+    await page.goto(base + '/?tab=ambient');
+    await page.waitForFunction(() => ambientAvailable === false && activeTab === 'control');
+    if (!(await page.locator('#tab-btn-ambient').isHidden()) || !(await page.locator('#control-ambient').isHidden())) fail('a deep link offered Ambient Light with neither integration installed');
+  } finally { await page.unrouteAll({ behavior: 'wait' }); await page.close(); }
+}
+
+async function visitTvHuesync(browser, base, problems) {
+  const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+  const fail = message => problems.push('TV Hue Sync: ' + message);
+  page.on('pageerror', error => fail(error.message));
+  const settings = JSON.parse(fs.readFileSync(path.join(ROOT, 'test/fixtures/huesync-settings.json'), 'utf8')).settings;
+  settings.ec_list[0].name = '<img src=x onerror=alert(1)>';
+  const diagnostics = { busy: false, bridge: { Connected: true, Authorized: true } };
+  const writes = [];
+  let writable = true, present = true, refuse = false, streaming = true, piccapRunning = true, piccapPresent = true;
+  async function choose(key) {
+    await page.evaluate(key => {
+      sel = rows.findIndex(row => row.key === key);
+      if (sel < 0) throw new Error('missing Hue Sync row ' + key);
+      render();
+    }, key);
+  }
+  async function press(key) {
+    await choose(key);
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => !busy);
+  }
+  try {
+    await page.route('**/api/stats*', async route => {
+      const response = await route.fetch();
+      const stats = await response.json();
+      delete stats.huesyncStreaming;
+      delete stats.piccapCapture;
+      if (piccapPresent) stats.piccapCapture = { running: piccapRunning, writable };
+      if (present) stats.huesyncStreaming = { streaming, writable, diagnostics, settings };
+      await route.fulfill({ json: stats });
+    });
+    await page.route('**/api/control', async route => {
+      const command = route.request().postDataJSON();
+      writes.push(command);
+      if (!refuse) {
+        if (command.action === 'huesyncSetting') settings[command.value.key] = command.value.value;
+        if (command.action === 'huesync') streaming = command.value;
+        if (command.action === 'piccap') piccapRunning = command.value;
+      }
+      await route.fulfill({ json: { ok: !refuse, error: refuse ? 'Synthetic failure' : undefined, settings } });
+    });
+    await page.goto(base + '/assets/dashboard.html?tab=ambient');
+    await page.waitForFunction(() => rows.some(row => row.act === 'huesyncAdjust'));
+    const categories = await page.evaluate(() => rows.filter(row => row.head).map(row => row.label));
+    if (JSON.stringify(categories) !== JSON.stringify(['Hue Sync', 'PicCap'])) fail('integration categories are missing or in the wrong order');
+    const labels = await page.evaluate(() => rows.filter(row => row.key === 'streaming' || row.key === 'piccap').map(row => row.label));
+    if (JSON.stringify(labels) !== JSON.stringify(['Hue Sync Enabled', 'PicCap Enabled'])) fail('enabled labels are inconsistent');
+    if (!(await page.evaluate(() => rows.find(row => row.key === 'piccap').hint)).includes('Hyperion or HyperHDR')) fail('PicCap hint omits a supported server');
+    if (await page.locator('#rows img').count()) fail('area name was interpreted as markup');
+    if (await page.evaluate(() => T().key) !== 'ambient') fail('ambient controls are not a top-level menu');
+    for (const value of [false, true]) {
+      await press('piccap');
+      await page.waitForFunction(value => rows.some(row => row.key === 'piccap' && row.next === !value), value);
+      if (writes[writes.length - 1].action !== 'piccap' || writes[writes.length - 1].value !== value || !streaming) fail('PicCap command changed Hue Sync');
+    }
+    await press('streaming');
+    if (writes[writes.length - 1].action !== 'huesync' || writes[writes.length - 1].value !== false) fail('streaming command is wrong');
+    await choose('brightness');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('Enter');
+    await page.waitForFunction(() => !adjusting && !adjustInFlight);
+    const brightness = writes.filter(command => command.action === 'huesyncSetting' && command.value.key === 'brightness');
+    if (!brightness.length || brightness[brightness.length - 1].value.value !== 61) fail('remote brightness adjustment sent the wrong final value');
+    for (const [key, value] of [['intensity', 3], ['sync_mode', '1'], ['current_ec', 'area-example-b']]) {
+      await press(key);
+      const command = writes[writes.length - 1];
+      if (command.action !== 'huesyncSetting' || command.value.key !== key || command.value.value !== value) fail('wrong native command for ' + key);
+    }
+    if (await page.evaluate(() => rows.some(row => row.key === 'huesyncMore') || sub !== null)) fail('More settings submenu remains');
+    for (const [key, value] of [['background_lightning_video', false], ['background_lightning_games', true], ['auto_start', false], ['auto_start_notification', true]]) {
+      await press(key);
+      const command = writes[writes.length - 1];
+      if (command.action !== 'huesyncSetting' || command.value.key !== key || command.value.value !== value) fail('wrong secondary command for ' + key);
+    }
+    refuse = true;
+    await press('intensity');
+    await page.waitForFunction(() => rows.some(row => row.key === 'intensity' && row.value === 'Extreme'));
+    if (!(await page.locator('#flash').textContent()).includes('Synthetic failure')) fail('failed command had no short error');
+    writable = false;
+    await page.evaluate(() => fetchTab(true));
+    await page.waitForFunction(() => rows.some(row => row.key === 'streaming' && !row.act) && rows.some(row => row.key === 'piccap' && !row.act));
+    const count = writes.length;
+    await press('streaming');
+    await press('piccap');
+    if (writes.length !== count) fail('read-only row sent a command');
+    writable = true; diagnostics.busy = true;
+    await page.evaluate(() => fetchTab(true));
+    await page.waitForFunction(() => rows.some(row => row.key === 'brightness' && !row.act));
+    await press('brightness');
+    if (writes.length !== count) fail('busy row sent a command');
+    present = false;
+    await page.evaluate(() => fetchTab(true));
+    await page.waitForFunction(() => rows.length === 2 && rows[0].head && rows[0].label === 'PicCap' && rows[1].key === 'piccap');
+    piccapPresent = false;
+    await page.evaluate(() => fetchTab(true));
+    await page.waitForFunction(() => !TABS.some(section => section.key === 'ambient') && T().key !== 'ambient');
+    if (await page.locator('#tabs [data-label="Ambient Light"]').count()) fail('the unavailable TV tab remained in navigation');
+    await page.reload();
+    await page.waitForFunction(() => !TABS.some(section => section.key === 'ambient') && T().key !== 'ambient');
+    const emptyText = await page.locator('#rows').textContent();
+    if (emptyText.includes('Hue Sync Enabled') || emptyText.includes('PicCap Enabled')) fail('an empty Ambient Light deep link left controls visible');
+    present = true; streaming = false;
+    await page.reload();
+    await page.waitForFunction(() => rows.some(row => row.head && row.label === 'Hue Sync') && !rows.some(row => row.key === 'piccap'));
+    if (await page.evaluate(() => T().key) !== 'ambient') fail('a stopped Hue Sync integration did not retain its TV tab');
+    if (await page.evaluate(() => rows.some(row => row.head && row.label === 'PicCap'))) fail('missing PicCap left an empty category');
+    present = false; piccapPresent = true; piccapRunning = false;
+    await page.reload();
+    await page.waitForFunction(() => rows.length === 2 && rows[1].key === 'piccap' && rows[1].next === true);
+    if (await page.evaluate(() => T().key) !== 'ambient') fail('a stopped PicCap integration did not retain its TV tab');
+  } finally { await page.unrouteAll({ behavior: 'wait' }); await page.close(); }
+}
+
+async function visitHomeLiquidGlass(browser, base, problems) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  page.on('pageerror', e => problems.push('Liquid Glass: ' + e.message));
+  const widgets = require('../server/lib/home-widgets').normalise({
+    weather: { enabled: true, location: { name: 'Paris, France', latitude: 48.85, longitude: 2.35 } },
+    football: { enabled: true, teams: [{ id: '160', name: 'Paris Saint-Germain' }] },
+    positions: { clock: 'left', weather: 'center', football: 'right' }
+  });
+  const layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] }, hidden: { app: [], dev: [], ch: [] }, channels: [],
+    showClock: true, showLastOn: false, picture: false, livePreview: false,
+    hintSeen: true, searchHintSeen: true, widgets };
+  await page.route('**/api/home**', route => {
+    const pathname = new URL(route.request().url()).pathname;
+    const reply = body => route.fulfill({ json: body });
+    if (pathname === '/api/home') return reply({ ok: true, supported: { ok: true }, enabled: true, active: true, writable: true, layout });
+    if (pathname === '/api/home/catalogue') return reply({ ok: true, layout, layoutVersion: 'glass',
+      apps: [], devices: [{ id: 'player', name: 'Player', port: 1 }], channels: [], order: { app: ['lg-home'], dev: ['player'], ch: [] }, sources: {} });
+    if (pathname === '/api/home/widgets/weather') return reply(require('../test/mocks/widget-forecast')());
+    if (pathname === '/api/home/widgets/football') return reply({ ok: true, available: true, matches: Array.from({ length: 10 }, (_, i) => ({ id: 'example-' + i, date: '2026-11-13T18:00:00Z', league: 'Example match', home: { name: 'Home team ' + (i + 1), score: 2 }, away: { name: 'Away team ' + (i + 1), score: 1 } })), nextMatches: [], missingTeams: [], leagues: [], mode: 'live' });
+    return reply({ ok: true, layoutVersion: 'glass', build: 'glass', covered: false });
+  });
+  try {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.goto(base + '/assets/home.html');
+    await page.locator('#widget-weather').waitFor();
+    await page.locator('#widget-football').waitFor();
+    const home = await page.locator('#when').evaluate(el => ({ width: el.offsetWidth, height: el.offsetHeight, radius: getComputedStyle(el).borderRadius }));
+    if (home.width !== 360 || home.height !== 200 || home.radius !== '28px') problems.push('Liquid Glass: Home material changed widget slot geometry or did not load');
+    await page.locator('#widget-weather').click();
+    await page.locator('#widget--panel').waitFor();
+    const panel = await page.locator('#widget--panel').evaluate(el => {
+      const box = el.getBoundingClientRect();
+      return { inset: box.left > 0 && box.top > 0 && box.right <= innerWidth && box.bottom <= innerHeight,
+        focus: el.contains(document.activeElement) };
+    });
+    if (!panel.inset || !panel.focus) problems.push('Liquid Glass: forecast sheet or focus escaped the stage');
+    await page.keyboard.press('Escape');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const transition = await page.locator('#when').evaluate(el => getComputedStyle(el).transitionDuration);
+    if (transition !== '0s') problems.push('Liquid Glass: reduced motion retained widget transitions');
+    // Simulate an engine without @supports: the base material and focus must stand alone.
+    await page.evaluate(() => {
+      const sheet = document.getElementById('look').sheet;
+      for (let i = sheet.cssRules.length - 1; i >= 0; i--) if (sheet.cssRules[i].type === CSSRule.SUPPORTS_RULE) sheet.deleteRule(i);
+    });
+    await page.locator('#when').click();
+    const focus = await page.locator('#when').evaluate(el => getComputedStyle(el).outlineWidth);
+    if (focus !== '3px') problems.push('Liquid Glass: fallback lost the remote focus ring');
+    await page.keyboard.press('ArrowDown');
+    async function widgetSpace(tall) {
+      await page.waitForFunction(expected => {
+        const widget = document.getElementById('widget-weather');
+        return !document.body.classList.contains('widget-focused') && (widget.offsetHeight > 260) === expected;
+      }, tall);
+      const geometry = await page.evaluate(() => {
+        const widgets = [...document.querySelectorAll('#widgets > .home-widget')].filter(el => el.offsetHeight);
+        const firstRow = [...document.querySelectorAll('#rows .row')].find(el => el.offsetHeight);
+        const weather = document.getElementById('widget-weather');
+        return { heights: widgets.map(el => el.offsetHeight), bottom: Math.max(...widgets.map(el => el.getBoundingClientRect().bottom)),
+          row: firstRow.getBoundingClientRect().top,
+          chart: weather.querySelector('.wk-chart > svg').getBoundingClientRect().height,
+          chartDrawing: Number(weather.querySelector('.wk-chart > svg').getAttribute('viewBox').split(' ')[3]),
+          clock: document.getElementById('when').offsetHeight,
+          scores: document.querySelector('#widget-football .widget-body').clientHeight };
+      });
+      if (geometry.heights.some(height => tall ? height < 400 : height !== 200) || geometry.bottom + 24 > geometry.row ||
+          geometry.clock !== 200 || tall && (geometry.chart < 100 || geometry.chartDrawing < 100 || geometry.scores < 300)) {
+        problems.push('Bottom-row widget space: ' + JSON.stringify({ tall, geometry }));
+      }
+      return geometry.heights[0];
+    }
+    for (const [view, fixed] of [['default', false], ['alternative', false], ['default', true], ['alternative', true]]) {
+      layout.rowsBottom = true; layout.view = view;
+      layout.widgetPlacement = fixed ? require('../server/lib/home-widgets').placement(layout) : null;
+      await page.reload();
+      const expandedHeight = await widgetSpace(true);
+      await page.keyboard.press('ArrowDown');
+      await page.waitForFunction(() => document.querySelector('.row.active').getAttribute('data-key') === 'dev');
+      await page.waitForFunction(height => document.getElementById('widget-weather').offsetHeight < height, expandedHeight);
+      const smallerHeight = await widgetSpace(true);
+      if (smallerHeight >= expandedHeight) problems.push('Bottom-row widgets did not shrink above the input row');
+      await page.keyboard.press('ArrowUp');
+      await widgetSpace(true);
+      await page.keyboard.press('ArrowUp');
+      await page.waitForFunction(() => document.body.classList.contains('widget-focused'));
+      await page.keyboard.press('ArrowDown');
+      layout.rowsBottom = false;
+      await page.reload();
+      await widgetSpace(false);
+    }
+  } finally { await page.close(); }
+}
+
 function groups(web, tv) {
   return [
-    { job: 'tabs', tabs: web.map(t => ({ path: '/?tab=' + t, label: 'web ' + t })), visits: [visitHomeAnimations] },
+    { job: 'tabs', tabs: web.map(t => ({ path: '/?tab=' + t, label: 'web ' + t })), visits: [visitHomeAnimations, visitHuesyncSettings] },
     { job: 'tabs', tabs: tv.map(t => ({ path: '/assets/dashboard.html?tab=' + t, label: 'TV ' + t })),
-      visits: [visitTvDashboard, visitTvAudio, visitTvPictureWrites, visitPictureUnavailable, visitTvNonOled] },
-    { job: 'home', tabs: [], visits: [visitHomePicture, visitHomePreview, visitHomePreviewOptions, visitHomeOrder, visitHomeAvailability, visitHomeSearch] },
+      visits: [visitTvDashboard, visitTvAudio, visitTvPictureWrites, visitPictureUnavailable, visitTvNonOled, visitTvHuesync] },
+    { job: 'home', tabs: [], visits: [visitHomePicture, visitHomePreview, visitHomePreviewOptions, visitHomeOrder, visitHomeAvailability, visitHomeSearch, visitHomeWeather, visitHomeWeatherSetting] },
     { job: 'home', tabs: [], visits: [visitHomeArrangement, visitHomeVisibility, visitHomeColours, visitHomeInputsEditor, visitHomeEditor,
-      visitHomeRecentsHidden, visitHomeUploads, visitHomeLauncher, visitHomeReadiness, visitAudioOverride, visitHomeRecents, visitHomeGuide,
+      visitHomeRecentsHidden, visitHomeUploads, visitHomeShuffle, visitHomeLauncher, visitHomeReadiness, visitAudioOverride, visitHomeRecents, visitHomeGuide,
       visitHomeFadeAndInputs] },
-    { job: 'home', tabs: [], visits: [visitHomeInternetTv, visitIptvChannels] },
+    { job: 'home', tabs: [], visits: [visitHomeInternetTv, visitIptvChannels, visitHomeWidgets, visitWidgetLayout, visitWidgetStore, visitHomeFootball, visitHomeLiquidGlass, require('./check-calendar')] },
     /*
      * Scrolling and motion read the row's place frame by frame, and missed
      * frames with the other groups sharing CI's four cores: 3 of 15 runs
@@ -2649,12 +4136,30 @@ function slowCpu(browser, rate) {
 
 const flaky = [];
 // A check run once more where it found a problem: see the top of this file.
+/*
+ * The longest one check may take. A step with no limit of its own, such as
+ * page.evaluate or page.close on a page that stopped answering, once held the
+ * home job until it was cancelled 15 minutes in, with nothing in the log to say
+ * where. Each check's time is printed as it ends, so a stall shows by name.
+ */
+const VISIT_LIMIT_MS = 60000;
+
+function withinLimit(promise, name) {
+  let timer;
+  const limit = new Promise((resolve, reject) => {
+    timer = setTimeout(() => reject(new Error('did not finish within ' + VISIT_LIMIT_MS / 1000 + ' s')), VISIT_LIMIT_MS);
+  });
+  return Promise.race([promise, limit]).finally(() => clearTimeout(timer));
+}
+
 async function runVisit(visitOne, browser, base, problems) {
   let first = null;
   for (;;) {
     const found = [];
-    try { await visitOne(browser, base, found); }
+    const startedAt = Date.now();
+    try { await withinLimit(visitOne(browser, base, found), visitOne.name); }
     catch (e) { found.push(visitOne.name + ': ' + String(e.message).split('\n')[0]); }
+    console.log('  ' + ((Date.now() - startedAt) / 1000).toFixed(1) + ' s  ' + visitOne.name + (found.length ? ' (problem)' : ''));
     if (!found.length) {
       if (first) flaky.push(visitOne.name + ' passed on a second try; the first found: ' + first.join('; '));
       return;

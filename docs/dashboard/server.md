@@ -31,10 +31,17 @@ Shows the installed version and whether a newer release is out. **Check now** lo
 | Ad blocking and your own hosts list, Limit ad tracking, and live content recognition when it is off | Live content recognition when it is on, and LG's other agreements: switching them on agrees to LG's terms, so that is done on the TV |
 | Background services switched off, Network device scans (which a set-top box controlled by the Magic Remote needs on), saved web pages (a restore adds those missing), remote keys and Quick Access | Hidden system apps, which restart LG's app manager to apply, and blocking LG's TV updates, to choose on each TV |
 | The screen saver and how long before the TV switches off | LG's On and Off Timers |
+| — | Hue Sync app settings, which belong to Hue Sync, and Hue Sync/PicCap streaming actions |
 | Glasshouse Home's layout | Whether Glasshouse Home is on, a custom launcher, wallpaper pictures and Internet TV playlists, which can hold logins |
-| Logging, the log server, the time server, watch time and daily backups being on, Prometheus, the daily update check | Who can reach the dashboard (port, host, token, controls), MQTT, the TV's name, the experimental switches, and watch time itself |
+| Logging, the log server, the time server, watch time and daily backups being on, Prometheus, the daily update check | Who can reach the dashboard (port, host, token, controls), MQTT, Home Assistant API, per-screen-saver entity, colour and random pool choices, the TV's name, the experimental switches, and watch time itself |
 
 A remote key or Quick Access key set to an app the TV doesn't have is named as not set. A key, input or service only one TV has is left as it is.
+
+Home's widget definitions, store snapshots, private settings and positions are
+included. Restore accepts up to 1 MB of JSON, including layouts with eight saved
+widgets. Display definitions and computed placement are rebuilt after restoration.
+Google Calendar selections and names are included; its OAuth credentials and
+refresh token are excluded. A restored TV must connect its own Google account.
 
 **Daily backup** saves the same backup on the TV once a day, in `/var/lib/tvweb/backups`, and keeps the last 7. It is off by default. Switched on, it saves that day's at once, then one each day the TV is on, as the server checks hourly. Each one kept is listed by its date with **Download** and **Restore**. Switching it off keeps those saved.
 
@@ -51,4 +58,5 @@ Folded away, since nothing in it needs changing for everyday use. Once opened, i
 * **Prometheus metrics** turns on the [Prometheus endpoint](../PROMETHEUS.md).
 * **Web app debugger** opens or closes Developer Mode's debugger to the network. It is closed unless it is needed, since webOS leaves it open with no password. On a TV whose kernel has no firewall there is no switch, since the port cannot be closed, and the row says the debugger stays open to the network.
 * **SSH keys** lists the public keys that can log in as root over SSH, in `/home/root/.ssh/authorized_keys`, by comment, type and SHA256 fingerprint, as `ssh-keygen -l` prints it. A public key pasted in is added, and **Remove** takes one out. While the file is there, the Homebrew Channel leaves root without a password, so only those keys get in. **Delete the key file** stops every key at once, and from the next reboot the Homebrew Channel gives root the password `alpine`, which everyone knows; until that reboot nothing can log in over SSH. The row says which applies now and after the next reboot, and offers **Reboot now** when they differ. None of it applies while SSH is off in the Homebrew Channel. Changing the keys needs a [token](../SECURITY.md); without one the row only lists them, by type and fingerprint.
+* **Pointer input** adds a trackpad under Control for moving, clicking and scrolling the TV cursor, with WebSocket or HTTP and 60, 120 or 240 updates per second; 120 is the default and recommended rate. Its descriptions explain the connection lifecycle and the dashboard batching rate's effect on smoothness and TV work; it does not limit other API clients.
 * **Experimental features**: hiding built-in apps from the Home screen, custom screen savers on webOS 11 and later, and the Home screen layout on webOS 10. See [Experimental features](../experimental.md) for why they are experimental.

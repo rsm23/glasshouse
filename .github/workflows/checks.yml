@@ -43,6 +43,9 @@ jobs:
       - name: documented entity list and deploy list match the code
         run: ./scripts/check-drift.py
 
+      - name: fork Liquid Glass appearance survives upstream changes
+        run: python3 scripts/check-fork-ui.py && python3 scripts/test-fork-ui.py
+
       # An entity that goes or is renamed breaks the automations that used it.
       - name: no Home Assistant entity from the last release gone without a reason
         run: ./scripts/check-entity-stability.py
@@ -84,6 +87,8 @@ jobs:
   # on webOS 9 (C2), and on 20 and 24. In parallel, each its own job.
   tv-node:
     runs-on: ubuntu-latest
+    # The suites take about a minute: a hang fails here, not 45 minutes later.
+    timeout-minutes: 5
     strategy:
       fail-fast: false
       matrix:

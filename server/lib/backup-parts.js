@@ -32,6 +32,8 @@ var screensavers = null;
 var apps = null;
 /** @type {typeof import('./home')} */
 var home = null;
+/** @type {typeof import('./resettime')} */
+var resettime = null;
 /** @type {function(function(boolean): void): void} */
 var alwaysOnSupported = function (cb) { cb(false); };
 
@@ -97,6 +99,16 @@ var PARTS = [
       });
     },
     write: function (v, cb) { control('alwaysReadyOffStart', String(v), cb); }
+  }),
+  whereAlwaysOn({
+    id: 'nightlyRefresh',
+    action: 'nightlyRefresh',
+    valid: isBool,
+    read: function (cb) {
+      if (!resettime || !resettime.supported()) return cb(undefined);
+      cb(resettime.enabled());
+    },
+    write: function (v, cb) { control('nightlyRefresh', v, cb); }
   }),
   // 'allEnabled' (with the wallpaper) or 'alwaysReady' (dark): only the first is offered.
   lgSwitch('alwaysReadyScreen', 'general', 'lifeOnScreenMode', 'alwaysReadyScreen', function (v) { return v !== 'off'; }),
@@ -335,7 +347,7 @@ var PARTS = [
     },
     read: function (cb) { cb({ mode: screensavers.screensaverMode(), level: screensavers.screensaverLevel() }); },
     refuse: function (v) {
-      var hit = screensavers.screensaverList().filter(function (s) { return s.id === v.mode; })[0];
+      var hit = screensavers.screensaverList().modes.filter(function (s) { return s.id === v.mode; })[0];
       return !hit ? 'absent' : !hit.available ? 'inactive' : null;
     },
     write: function (v, cb) { control('screensaverMode', v, cb); }
@@ -362,8 +374,9 @@ var NOT_CARRIED = {
   input: 'action', sendText: 'action', launch_app: 'action', launchApp: 'action', launch_url: 'action',
   launchUrl: 'action', close_app: 'action', closeApp: 'action', playback: 'action', media: 'action',
   resetAdId: 'action', clearAdCookies: 'action', privacyAllOff: 'action', sleepTimer: 'action',
-  piccap: 'action', huesync: 'action', serviceMenuOpen: 'action', tvAppInstall: 'action', tvAppRemove: 'action',
+  piccap: 'action', huesync: 'action', huesyncSetting: 'external Hue Sync app settings, not stored by Glasshouse', serviceMenuOpen: 'action', tvAppInstall: 'action', tvAppRemove: 'action',
   rcu: 'action', keyboardText: 'action', keyboardKey: 'action', screensaver: 'action', toast: 'action',
+  screensaverRandomPool: 'choose',
   powerOn: 'action', powerOff: 'action', reboot: 'action', refresherSchedule: 'action', refresherCancel: 'action',
   updateCheck: 'action', update: 'action', updateRollback: 'action', clearHistory: 'action',
   // Picture settings are kept per input and picture mode, and suit the panel.
@@ -380,7 +393,9 @@ var NOT_CARRIED = {
   blockTvUpdates: 'choose',
   // Rewrites LG's app list and restarts its app manager; Glasshouse Home's own hiding is in the layout.
   tileHiding: 'choose',
-  setTileHidingAllowed: 'experimental', setWebos10ScreensaversAllowed: 'experimental',
+  // Screen saver entity slots and colors can be chosen per TV.
+  screensaverEntities: 'choose', screensaverColor: 'choose',
+  setTileHidingAllowed: 'experimental', setWebos10ScreensaversAllowed: 'experimental', setInputBarAllowed: 'experimental', setPointerEnabled: 'experimental', setPointerSettings: 'experimental',
   setNetworkDebuggerAllowed: 'access', setDashboardPort: 'access',
   setDeviceName: 'tvName',
   // config.json's, in backup.js's GLASSHOUSE.
@@ -403,6 +418,7 @@ function init(opts) {
   screensavers = opts.screensavers;
   apps = opts.apps;
   home = opts.home || null;
+  if (opts.resettime) resettime = opts.resettime;
   if (opts.alwaysOnSupported) alwaysOnSupported = opts.alwaysOnSupported;
 }
 

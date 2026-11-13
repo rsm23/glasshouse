@@ -2,6 +2,8 @@
  * test/test-iptv.js - Internet TV end to end: the server module starting real
  * worker processes that download from a local provider through curl, and
  * what it publishes, keeps and refuses
+ *
+ * @slow: started first by run-all.js, which runs a few suites at a time.
  */
 
 var assert = require('assert');
@@ -485,6 +487,67 @@ step('channels added just before a restart get their play links at once after it
       wait(idle, done);
     }, 15000);
   });
+});
+
+step('an Xtream channel plays as MPEG-TS once chosen, after a restart too, and as HLS again', function (done) {
+  iptv.search(xc, 'harbour sport 1', '', function (s) {
+    var c = s.channels[0];
+    var hls = iptv.streamUrl(xc, c.key);
+    assert.equal(hls.format, 'hls');
+    assert.strictEqual(hls.switchable, true, 'a panel offering both can switch');
+    assert.equal(iptv.setOutput({ pl: xc, key: c.key, output: 'ts' }).ok, true);
+    assert.equal(iptv.streamUrl(xc, c.key).url, hls.url.replace(/\.m3u8$/, '.ts'));
+    iptv.stop();
+    iptv.init({ stateDir: stateDir, clients: function () { return [CURL]; }, version: 'test', catchupMs: 600000, onChange: function () { changes++; } });
+    iptv.start();
+    assert.equal(iptv.streamUrl(xc, c.key).format, 'ts', 'kept in the playlist\'s settings');
+    assert.equal(iptv.setOutput({ pl: xc, key: c.key, output: 'hls' }).ok, true);
+    assert.equal(iptv.streamUrl(xc, c.key).url, hls.url);
+    assert.equal(iptv.setOutput({ pl: m3u, key: c.key, output: 'ts' }).ok, false, 'a plain list has one kind of link');
+    done();
+  });
+});
+
+step('live TV pause is off by default, kept, and records only an MPEG-TS channel played full screen', function (done) {
+  var ts = require('../server/lib/iptv-timeshift');
+  // No USB stick: a mounts file that lists none.
+  ts.init({ mountsFile: path.join(stateDir, 'no-mounts') });
+  iptv.search(xc, 'harbour sport 1', '', function (s) {
+    var c = s.channels[0];
+    assert.strictEqual(iptv.status().timeshift.on, false);
+    assert.equal(iptv.setTimeshift({ on: 'yes' }).ok, false);
+    assert.equal(iptv.setTimeshift({ on: true }).ok, true);
+    iptv.stop();
+    iptv.init({ stateDir: stateDir, clients: function () { return [CURL]; }, version: 'test', catchupMs: 600000, onChange: function () { changes++; } });
+    iptv.start();
+    assert.strictEqual(iptv.status().timeshift.on, true, 'kept across a restart');
+    assert.strictEqual(iptv.rowStatus().timeshift, true, 'Home knows');
+    iptv.playUrl(xc, c.key, true, function (hls) {
+      assert.ok(hls && !hls.timeshift && hls.format === 'hls', 'HLS plays directly');
+      assert.equal(iptv.setOutput({ pl: xc, key: c.key, output: 'ts' }).ok, true);
+      iptv.playUrl(xc, c.key, false, function (preview) {
+        assert.ok(!preview.timeshift, 'a preview is not recorded');
+        assert.equal(ts._session(), null);
+        iptv.playUrl(xc, c.key, true, function (full) {
+          assert.ok(!full.timeshift && /\.ts$/.test(full.url), 'without a stick, the provider\'s URL');
+          assert.equal(iptv.setOutput({ pl: xc, key: c.key, output: 'hls' }).ok, true);
+          assert.equal(iptv.setTimeshift({ on: false }).ok, true);
+          done();
+        });
+      });
+    });
+  });
+});
+
+step('a stream event is one log line, with the channel\'s key and never its link', function (done) {
+  var lines = [], log = console.log;
+  console.log = function (l) { lines.push(String(l)); };
+  try {
+    assert.equal(iptv.streamEvent({ event: 'reconnecting', pl: xc, key: 'x1', full: true, why: 'stall', still: 9001, url: 'http://u:p@h/x' }).ok, true);
+    assert.equal(iptv.streamEvent({ event: 'Bad Event!' }).ok, false);
+  } finally { console.log = log; }
+  assert.deepEqual(lines, ['iptv: stream reconnecting ' + xc + ':x1 full why=stall still=9001']);
+  done();
 });
 
 step('removing a playlist takes its channels off the row and its files off the TV at once', function (done) {

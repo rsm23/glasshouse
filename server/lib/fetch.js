@@ -25,7 +25,8 @@ function init(opts) {
   opts = opts || {};
   if (opts.config) config = opts.config;
   if (opts.version) currentVersion = opts.version;
-  if (opts.clientDirs) clientDirs = opts.clientDirs;
+  if (opts.clientDirs) { clientDirs = opts.clientDirs; fetchClient = null; }
+  if (opts.client !== undefined) fetchClient = opts.client;
 }
 
 function client() { return fetchClient; }
@@ -53,6 +54,28 @@ function networkFailure(bin, err, stderr) {
     return err.code === 4 || /bad address|can't connect|timed out|unreachable/i.test(String(stderr || ''));
   }
   return err.code === 6 || err.code === 7 || err.code === 28;
+}
+
+/*
+ * TLS certificate check failed: the server's certificate is invalid, expired,
+ * or untrusted. Trying another client would either fail the same way or, with
+ * BusyBox wget's internal TLS, skip verification and accept untrusted code.
+ *   curl      51 mismatch, 60 verification failed, 77 CA cert unreadable,
+ *             82 CRL failed, 83 issuer failed, 90 pinned key, 91 invalid status
+ *   GNU wget  5 SSL verification failure
+ *   busybox   exits 1 on everything; stderr tells
+ */
+function certFailure(bin, err, stderr) {
+  if (!err) return false;
+  if (!isWget(bin)) {
+    if (err.code === 60 || err.code === 51 || err.code === 77 ||
+        err.code === 82 || err.code === 83 || err.code === 90 || err.code === 91) {
+      return true;
+    }
+  } else if (err.code === 5) {
+    return true;
+  }
+  return /certificate|cert\s+problem|sec_error|ssl_error|verify\s+(?:error|failed)/i.test(String(stderr || ''));
 }
 
 function httpErrorStatus(err, stderr) {
@@ -245,6 +268,11 @@ function run(url, outFile, mode, opts, cb) {
           off.offline = true;
           return finish(off);
         }
+        if (certFailure(bin, err, stderr)) {
+          console.error('fetch: ' + path.basename(bin) + ': ' + execErr(err, stderr));
+          return finish(new Error(msg('srv.fetch.certFailed', 'Certificate verification failed for {host}. Check the TV\'s date and time, or the connection.',
+                                      { host: github ? 'GitHub' : host })));
+        }
         last = path.basename(bin) + ': ' + execErr(err, stderr);
         return next();
       }
@@ -292,7 +320,7 @@ function download(url, outFile, opts, cb) {
 }
 
 /* Small JSON document, https only; cb(err, parsed). */
-function getJson(url, cb) {
+function getJson(url, cb, opts) {
   var bad = validateUrl(url);
   if (!bad && !/^https:\/\//i.test(url)) {
     bad = msg('srv.fetch.needHttps', 'the address must start with https://');
@@ -301,7 +329,7 @@ function getJson(url, cb) {
     setTimeout(function () { cb(new Error(bad)); }, 0);
     return;
   }
-  run(url, null, 'text', { maxBuffer: 8 * 1024 * 1024 }, function (err, body) {
+  run(url, null, 'text', { maxBuffer: opts && opts.maxBuffer || 8 * 1024 * 1024 }, function (err, body) {
     if (err) return cb(err);
     var doc;
     try { doc = JSON.parse(body); } catch (e) {
@@ -321,5 +349,6 @@ module.exports = {
   validateUrl: validateUrl,
   execErr: execErr,
   hostOf: hostOf,
-  _fetchArgs: fetchArgs
+  _fetchArgs: fetchArgs,
+  _certFailure: certFailure
 };

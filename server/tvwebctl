@@ -156,8 +156,9 @@ start_watch() {
 # such a child sits on a lock it inherited held, and the server waits on it with
 # its event loop frozen: "heartbeat 149s old" after a resume from standby, the
 # child a copy of tvweb.js in futex_wait_queue_me. The server starts nothing
-# else that runs node but its two workers, the remote's buttons and Internet
-# TV's jobs (lib/iptv-worker.js, which can run for minutes), so any other child
+# else that runs node but its workers, the remote's buttons, Internet TV's jobs
+# (lib/iptv-worker.js, which can run for minutes) and its recording for pausing
+# live TV (lib/iptv-timeshift-worker.js, for as long as a channel plays), so any other child
 # still running the server's own binary is one.
 # The binary rather than the name: node 22.15 and later rename the main thread,
 # which the fork inherits, to MainThread (24.21) or node-MainThread. The window
@@ -171,7 +172,7 @@ stuck_children() {
     [ "$ppid" = "$1" ] || continue
     [ "$(readlink "/proc/$cpid/exe" 2>/dev/null)" = "$node" ] || continue
     cmd=$(tr '\0' ' ' < "/proc/$cpid/cmdline" 2>/dev/null)
-    case "$cmd" in *remotebuttons*|*iptv-worker*) continue ;; esac
+    case "$cmd" in *remotebuttons*|*iptv-worker*|*iptv-timeshift*) continue ;; esac
     printf "%s " "$cpid"
   done
 }
@@ -347,6 +348,26 @@ rollback_app() {
   sleep 4
   "$SELF" status
 }
+
+# The server and its watchdog in a systemd scope of their own. Started from
+# the Homebrew Channel's start-up, they were in the cgroup of whichever LG
+# service ran it, with its SSH and telnet: webapp-mgr.service on a 50NANO756PR
+# (webOS 6), ls-hubd.service on a C2 (webOS 9.2.2). Restarting that service
+# killed them all, and on the webOS 6 TV a settings change did (#1355). Only on
+# a TV (not under test/test-tvwebctl.js), and where systemd-run is missing or
+# refuses, they start where they are, as before.
+case "$1" in
+  start|restart|update|rollback)
+    if [ -z "$TVWEB_SCOPED" ] && [ -d /usr/palm/applications ] && command -v systemd-run >/dev/null 2>&1 &&
+       ! grep -q 'tvweb' /proc/self/cgroup 2>/dev/null; then
+      # Tried first with a command that does nothing, so the action itself runs
+      # once, in the scope or, where none can be made, here.
+      if systemd-run --scope --unit="tvweb-probe-$$" /bin/true >/dev/null 2>&1; then
+        TVWEB_SCOPED=1 exec systemd-run --scope --unit="tvweb-$$" "$SELF" "$@"
+      fi
+      echo "systemd-run did not start it in a scope of its own; starting it here"
+    fi ;;
+esac
 
 case "$1" in
   start)   start_app; start_watch ;;

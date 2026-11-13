@@ -216,6 +216,49 @@ function hdmiKey(d) {
           diag.chroma || '', diag.hdcp || '', d.colorimetry || pe.colorimetry || '', pe.hdr_mode || ''].join('|');
 }
 
+function renderRemoteBattery(rem) {
+  const hasBattery = !!(rem && Number.isFinite(rem.battery) && rem.battery >= 0 && rem.battery <= 100);
+  const readRow = q('remote-read-row'), readVal = q('remote-read-val');
+  if (hasBattery) {
+    q('remoteblock').hidden = false;
+    q('remote-pct').textContent = rem.battery;
+    const gFill = q('remote-gauge-fill');
+    gFill.style.width = Math.max(0, Math.min(100, rem.battery)) + '%';
+    gFill.style.background = rem.battery <= 15 ? 'var(--red)' : rem.battery <= 30 ? 'var(--cand)' : 'var(--green)';
+    if (readRow && readVal) {
+      readRow.hidden = !rem.batteryUpdatedAt;
+      readVal.textContent = rem.batteryUpdatedAt ? new Date(rem.batteryUpdatedAt).toLocaleString() : '';
+    }
+    q('remote-model-val').textContent = rem.model ? rem.model.replace(/^LGE\s*/i, '') : t('metrics.remote.name', 'Magic Remote');
+    q('remote-fw-val').textContent = rem.firmware || '—';
+    if (q('remote-fw-row')) q('remote-fw-row').hidden = !rem.firmware;
+    if (q('remote-signal-row')) {
+      q('remote-signal-row').hidden = !rem.signal;
+      if (rem.signal) {
+        const isWeak = rem.signal === 'weak';
+        q('remote-signal-val').textContent = isWeak ? t('metrics.remote.signalWeak', 'Weak') : t('metrics.remote.signalGood', 'Good');
+        q('remote-signal-val').style.color = isWeak ? 'var(--cand)' : '';
+      }
+    }
+    const rPill = q('remote-pill');
+    if (rPill) {
+      const isConn = !!rem.connected;
+      rPill.className = 'pill ' + (isConn ? 'good' : 'idle');
+      rPill.textContent = isConn ? t('metrics.remote.connected', 'Connected') : t('metrics.remote.standby', 'Standby');
+      rPill.title = rem.mac ? t('metrics.remote.bluetooth', 'Bluetooth: {address}', { address: rem.mac }) + ' · ' + (isConn ? t('metrics.remote.connected', 'Connected') : t('metrics.remote.standby', 'Standby')) : '';
+    }
+    q('remoteblock').title = [rem.model || t('metrics.remote.name', 'Magic Remote'),
+      rem.firmware ? t('metrics.remote.firmware', 'Firmware: {version}', { version: rem.firmware }) : '',
+      rem.mac ? t('metrics.remote.bluetooth', 'Bluetooth: {address}', { address: rem.mac }) : ''].filter(Boolean).join(' · ');
+  } else {
+    q('remoteblock').hidden = true;
+    if (readRow && readVal) {
+      readRow.hidden = true;
+      readVal.textContent = '';
+    }
+  }
+}
+
 async function tick() {
   try {
     const r = await fetch(api('/api/stats'), { cache: 'no-store' });
@@ -323,6 +366,15 @@ async function tick() {
       const arsVal = getLease('alwaysReadyScreen', d.alwaysReadyScreen);
       advPill('ars', 'btn_ars', arsVal !== undefined ? arsVal : d.alwaysReadyScreen);
       arOffRow(arVal ? d.alwaysReadyOff : undefined);
+      const nrRow = q('row-nightlyrefresh');
+      if (nrRow) {
+        const nrSupported = typeof d.nightlyRefresh === 'boolean';
+        nrRow.hidden = !(arVal && d.alwaysReadyOff && nrSupported);
+        if (!nrRow.hidden) {
+          const nrVal = getLease('nightlyRefresh', d.nightlyRefresh);
+          advPill('nightlyrefresh', 'btn_nightlyrefresh', nrVal !== undefined ? nrVal : d.nightlyRefresh);
+        }
+      }
       powerTimerRows(d.powerTimers);
       const wolVal = getLease('wakeOnLan', d.wakeOnLan);
       advPill('wol', 'btn_wol', wolVal !== undefined ? wolVal : d.wakeOnLan);
@@ -343,11 +395,16 @@ async function tick() {
       if (q('adv-lights')) q('adv-lights').hidden = lights.standby === undefined && !lights.hasLogo;
       const pc = d.piccapCapture;
       const pcVal = getLease('piccap', pc ? pc.running : undefined);
-      advPill('piccap', 'btn_piccap', pc ? (pcVal !== undefined ? pcVal : pc.running) : undefined);
+      renderAmbientPower('piccap', pc ? (pcVal !== undefined ? pcVal : pc.running) : undefined);
+      for (const id of ['btn_piccap', 'ctl_piccap']) q(id).disabled = !!pc && pc.writable === false;
       const hs = d.huesyncStreaming;
+      renderHuesyncSettings(hs);
       const hsVal = getLease('huesync', hs ? hs.streaming : undefined);
-      advPill('huesync', 'btn_huesync', hs ? (hsVal !== undefined ? hsVal : hs.streaming) : undefined);
-      if (q('adv-piccap')) q('adv-piccap').hidden = !pc && !hs;
+      renderAmbientPower('huesync', hs ? (hsVal !== undefined ? hsVal : hs.streaming) : undefined);
+      q('ambient-huesync').hidden = !hs;
+      q('ambient-piccap').hidden = !pc;
+      q('ambient-empty').hidden = !!pc || !!hs;
+      q('control-ambient').hidden = !pc && !hs;
       const devVal = getLease('deviceDetection', d.deviceDetection);
       advPill('devdetect', 'btn_devdetect', devVal !== undefined ? devVal : d.deviceDetection);
       const scanVal = getLease('deviceScans', d.deviceScans);
@@ -361,38 +418,7 @@ async function tick() {
       if (q('snd-cur')) q('snd-cur').textContent = d.audio_output || '';
     }
 
-    const rem = d.remote;
-    const hasBattery = !!(rem && typeof rem.battery === 'number');
-    if (hasBattery) {
-      q('remoteblock').hidden = false;
-      q('remote-pct').textContent = rem.battery;
-      const gFill = q('remote-gauge-fill');
-      gFill.style.width = Math.max(5, Math.min(100, rem.battery)) + '%';
-      gFill.style.background = rem.battery <= 15 ? 'var(--red)' : rem.battery <= 30 ? 'var(--cand)' : 'var(--green)';
-      q('remote-model-val').textContent = rem.model ? rem.model.replace(/^LGE\s*/i, '') : t('metrics.remote.name', 'Magic Remote');
-      q('remote-fw-val').textContent = rem.firmware || '—';
-      if (q('remote-fw-row')) q('remote-fw-row').hidden = !rem.firmware;
-      if (q('remote-signal-row')) {
-        q('remote-signal-row').hidden = !rem.signal;
-        if (rem.signal) {
-          const isWeak = rem.signal === 'weak';
-          q('remote-signal-val').textContent = isWeak ? t('metrics.remote.signalWeak', 'Weak') : t('metrics.remote.signalGood', 'Good');
-          q('remote-signal-val').style.color = isWeak ? 'var(--cand)' : '';
-        }
-      }
-      const rPill = q('remote-pill');
-      if (rPill) {
-        const isConn = !!rem.connected;
-        rPill.className = 'pill ' + (isConn ? 'good' : 'idle');
-        rPill.textContent = isConn ? t('metrics.remote.connected', 'Connected') : t('metrics.remote.standby', 'Standby');
-        rPill.title = rem.mac ? t('metrics.remote.bluetooth', 'Bluetooth: {address}', { address: rem.mac }) + ' · ' + (isConn ? t('metrics.remote.connected', 'Connected') : t('metrics.remote.standby', 'Standby')) : '';
-      }
-      q('remoteblock').title = [rem.model || t('metrics.remote.name', 'Magic Remote'),
-        rem.firmware ? t('metrics.remote.firmware', 'Firmware: {version}', { version: rem.firmware }) : '',
-        rem.mac ? t('metrics.remote.bluetooth', 'Bluetooth: {address}', { address: rem.mac }) : ''].filter(Boolean).join(' · ');
-    } else {
-      q('remoteblock').hidden = true;
-    }
+    renderRemoteBattery(d.remote);
 
     /* The badge names the format the source is sending, and the picture
        settings' family only where the TV reports no format: in standby, or
@@ -661,6 +687,10 @@ async function tick() {
     // If it was showing when the set turned out not to be an OLED, leave it.
     if (!isOledSet && activeTab === 'oledcare') showTab('control');
 
+    ambientAvailable = !!(d.huesyncStreaming || d.piccapCapture);
+    q('tab-btn-ambient').hidden = !ambientAvailable;
+    if (!ambientAvailable && activeTab === 'ambient') showTab('control');
+
     const ssOnInput = /^hdmi[1-4]$/.test(d.app || '') || d.app === 'livetv';
     refuseScreensaver(q('btn_ss'), ssOnInput ? SS_ONLY_IN_APPS : '');
     /* Same control on the Screensaver tab, where it says which way it will go:
@@ -673,9 +703,11 @@ async function tick() {
                    ssOn ? t('ss.dismiss', 'Dismiss screen saver') : t('ss.start', 'Start screen saver'));
       q('ss-toggle').classList.toggle('on', ssOn);
       // Dismissing works from anywhere; only starting one needs an app.
+      const ssBlocked = (typeof ssBlockedReason === 'string' && !ssOn) ? ssBlockedReason : '';
       refuseScreensaver(q('ss-toggle'),
         !ssWritable ? t('common.controlsOff', 'Controls are disabled in config.json.')
         : ssSwitching ? SS_SWITCHING
+        : ssBlocked ? ssBlocked
         : (ssOnInput && !ssOn) ? SS_ONLY_IN_APPS : '');
     }
 

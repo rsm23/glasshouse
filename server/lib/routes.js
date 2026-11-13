@@ -55,6 +55,8 @@ var config = {};
 var configFilePath = '';
 /** @type {typeof import('./controls')} */
 var controlsModule = null;
+/** @type {typeof import('./pointer')} */
+var pointerModule = null;
 /** @type {typeof import('./telemetry')} */
 var telemetryModule = null;
 /** @type {typeof import('./oled')} */
@@ -75,6 +77,8 @@ var appsModule = null;
 var servicesModule = null;
 /** @type {typeof import('./preload')} */
 var preloadModule = null;
+/** @type {typeof import('./appdns')} */
+var appDnsModule = null;
 /** @type {typeof import('./quickaccess')} */
 var quickAccessModule = null;
 /** @type {typeof import('./remotekeys')} */
@@ -93,6 +97,10 @@ var homeLauncherModule = null;
 var iptvModule = null;
 /** @type {typeof import('./screensavers')} */
 var screensaversModule = null;
+/** @type {typeof import('./haentity')} */
+var haEntityModule = null;
+/** @type {typeof import('./inputbar')} */
+var inputBarModule = null;
 /** @type {typeof import('./updater')} */
 var updaterModule = null;
 /** @type {typeof import('./logs')} */
@@ -213,7 +221,7 @@ function setupPending() {
  * those decide who may reach this server at all, and a UI that can widen its
  * own exposure defeats the point of setting them. The one exception is host,
  * from the TV itself during setup - see setNetworkAccess. Experimental feature
- * toggles (allowTileHiding, allowExperimentalScreensavers), allowNetworkDebugger and
+ * toggles (allowTileHiding, allowExperimentalScreensavers, allowExperimentalInputBar), allowNetworkDebugger and
  * prometheus.enabled are writable from the Server tab, and iconServer from the
  * MQTT tab: its port answers nothing but the icons the dashboard serves.
  */
@@ -297,7 +305,42 @@ function validateSettings(j) {
   // Saved with the MQTT form, whose Launch App select lists the icons' addresses.
   if (j && typeof j.iconServer === 'boolean') out.iconServer = j.iconServer;
 
+  if (j && j.homeAssistant) {
+    var haRes = validateHaSettings(j.homeAssistant);
+    for (var hi = 0; hi < haRes.errors.length; hi++) e.push(haRes.errors[hi]);
+    out.homeAssistant = haRes.value;
+  }
+
   return { errors: e, value: out };
+}
+
+function validateHaSettings(haObj) {
+  var errors = [];
+  var out = {};
+  if (!haObj || typeof haObj !== 'object') return { errors: ['homeAssistant must be an object'], value: out };
+  if (typeof haObj.enabled === 'boolean') out.enabled = haObj.enabled;
+  if (typeof haObj.url === 'string') {
+    var haUrl = trimmedString(haObj.url).replace(/\/+$/, '');
+    if (haUrl && !/^https?:\/\//i.test(haUrl)) {
+      errors.push('Home Assistant URL must start with http:// or https://');
+    } else {
+      out.url = haUrl;
+    }
+  }
+  if (typeof haObj.token === 'string') {
+    var haTok = trimmedString(haObj.token);
+    if (haTok || haObj.clearToken) out.token = haTok;
+  }
+  return { errors: errors, value: out };
+}
+
+function applyHaConfig(haPatch) {
+  if (!haPatch) return;
+  config.homeAssistant = config.homeAssistant || {};
+  if (haPatch.enabled !== undefined) config.homeAssistant.enabled = haPatch.enabled;
+  if (haPatch.url !== undefined) config.homeAssistant.url = haPatch.url;
+  if (haPatch.token !== undefined) config.homeAssistant.token = haPatch.token;
+  if (haEntityModule) haEntityModule.update(config.homeAssistant);
 }
 
 function writeSettings(patch, cb) {
@@ -655,6 +698,14 @@ function updateSummary() {
   s.allowNetworkDebugger = !!(config && config.allowNetworkDebugger);
   s.allowTileHiding = !!(appsModule && appsModule.tileHidingAllowed && appsModule.tileHidingAllowed());
   s.allowExperimentalScreensavers = !!(screensaversModule && screensaversModule.allowedAnyway && screensaversModule.allowedAnyway());
+  s.pointer = {
+    supported: !!(pointerModule && pointerModule.isSupported()),
+    enabled: !!(pointerModule && pointerModule.isEnabled()),
+    transport: config.pointer && config.pointer.transport || 'websocket',
+    updatesPerSecond: config.pointer && config.pointer.updatesPerSecond || 120
+  };
+  // Where the Server tab offers the input bar's switch: where it is experimental.
+  s.inputBar = inputBarModule ? inputBarModule.summary() : null;
   // Where the Server tab offers the switch: custom screen savers are experimental there.
   s.isWebos10 = !!(screensaversModule && screensaversModule.experimental && screensaversModule.experimental());
   s.homeLayout = homeScreenModule ? homeScreenModule.experimental() : null;
@@ -770,14 +821,15 @@ function postGuard(req, res, wantType, exact) {
 
 function readJsonBody(req, res, cb, max) {
   if (!postGuard(req, res, 'application/json', false)) return;
-  var body = '', tooBig = false;
+  var body = '', bodyBytes = 0, tooBig = false;
   // A body in several chunks can split a character: decoding each chunk alone would garble it.
   req.setEncoding('utf8');
   req.on('data', function (d) {
     if (tooBig) return;
     body += d;
+    bodyBytes += Buffer.byteLength(d, 'utf8');
     // Read to the end and answer, rather than drop the connection: the page then says why.
-    if (body.length > (max || 8192)) { tooBig = true; body = ''; }
+    if (bodyBytes > (max || 8192)) { tooBig = true; body = ''; }
   });
   req.on('end', function () {
     if (tooBig) return send(res, 413, JSON.stringify({ ok: false, error: 'too-big' }));
@@ -1057,12 +1109,20 @@ function handleInstallRoute(req, res, u, pathname) {
 
 function getSettingsPayload() {
   var mc = config.mqtt || {};
+  var haCfg = config.homeAssistant || {};
   var mqttStat = getMqttStatus();
   return {
     ok: true,
     writable: config.allowControl,
     configFile: configFilePath,
     iconServer: config.iconServer === true,
+    homeAssistant: {
+      enabled: haCfg.enabled !== false,
+      url: haCfg.url || '',
+      tokenSet: !!haCfg.token,
+      configured: !!(haEntityModule && haEntityModule.configured()),
+      status: (haEntityModule && typeof haEntityModule.status === 'function') ? haEntityModule.status() : null
+    },
     mqtt: {
       enabled: !!mc.enabled,
       host: mc.host || '',
@@ -1192,18 +1252,27 @@ function handleHomeRoute(req, res, u, pathname) {
         reply(c);
       });
     }
+    if (pathname === '/api/home/widgets/weather') return homeModule.widgets.weather(homeModule.layout().widgets, reply);
+    if (pathname === '/api/home/widgets/football') return homeModule.widgets.football.read(homeModule.layout().widgets.football, reply);
+    if (pathname === '/api/home/widgets/calendar') return homeModule.widgets.calendar.read(homeModule.layout().widgets.calendar, reply);
+    if (pathname === '/api/home/widgets/calendar/status') return reply(homeModule.widgets.calendar.auth.status());
+    if (pathname === '/api/home/widgets/store') return homeModule.widgets.store.read(reply, u.query && u.query.refresh === '1');
     if (pathname === '/api/home/channels') {
       return homeModule.channelList(function (list) { reply({ ok: true, channels: list, tuner: !!list }); });
     }
     if (pathname === '/api/home/guide') return homeModule.guide(function (g) { reply({ ok: true, guide: g }); });
     if (pathname === '/api/home/now') return homeModule.now(reply);
+    if (pathname === '/api/home/weather') return homeModule.weather(reply);
+    if (pathname === '/api/home/weather/places') {
+      return homeModule.weatherPlaces(String(u.query && u.query.q || ''), String(u.query && u.query.lang || ''), reply);
+    }
     if (pathname === '/api/home/picture') {
       return homePictureModule.picture(String(u.query && u.query.kind || ''), Number(u.query && u.query.port), reply,
         String(u.query && u.query.app || ''));
     }
     if (pathname === '/api/home/signal') return homePictureModule.signal(Number(u.query && u.query.port), reply);
     if (pathname === '/api/home/wallpaper') {
-      var wallpaper = homeModule.wallpaperPath(String(u.query && u.query.slot || ''));
+      var wallpaper = homeModule.wallpaperPath(String(u.query && u.query.slot || ''), String(u.query && u.query.id || ''));
       if (!wallpaper) return send(res, 404, JSON.stringify({ ok: false, error: 'no wallpaper uploaded' }));
       return sendIconFile(req, res, wallpaper, function (status, error) {
         send(res, status, JSON.stringify({ ok: false, error: error }));
@@ -1259,6 +1328,13 @@ function handleHomeRoute(req, res, u, pathname) {
     }
     return readJsonBody(req, res, function (body) {
       if (pathname === '/api/home/layout') return homeModule.setLayout(body, reply);
+      if (pathname === '/api/home/widgets/store') return homeModule.widgetAction(body, reply);
+      if (pathname === '/api/home/widgets/locations') return homeModule.widgets.locations(body && body.query, reply);
+      if (pathname === '/api/home/widgets/football/leagues') return homeModule.widgets.football.leagues(reply);
+      if (pathname === '/api/home/widgets/football/teams') return homeModule.widgets.football.teams(body && body.league, reply);
+      if (pathname === '/api/home/widgets/calendar/connect') return reply(homeModule.widgets.calendar.auth.start(body, 'http://' + req.headers.host));
+      if (pathname === '/api/home/widgets/calendar/calendars') return homeModule.widgets.calendar.calendars(reply);
+      if (pathname === '/api/home/widgets/calendar/disconnect') return homeModule.widgets.calendar.auth.disconnect(reply);
       if (pathname === '/api/home/start-layout') return homeModule.setHideLgHomeAtStart(body, reply);
       if (pathname === '/api/home/wallpapers') return homeModule.setWallpapers(body, reply);
       if (pathname === '/api/home/enable') return homeModule.enable(reply);
@@ -1280,7 +1356,7 @@ function handleHomeRoute(req, res, u, pathname) {
         return reply({ ok: false, error: 'action must be open, close or closeAll' });
       }
       send(res, 404, JSON.stringify({ ok: false, error: 'not found' }));
-    });
+    }, pathname === '/api/home/layout' ? 262144 : undefined);
   }
   send(res, 404, JSON.stringify({ ok: false, error: 'not found' }));
 }
@@ -1353,10 +1429,18 @@ function handleIptvRoute(req, res, u, pathname) {
     if (pathname === '/api/iptv/stream') {
       // The play URL carries the login on Xtream: for the TV's own Home only.
       if (!fromTV(req)) return send(res, 403, JSON.stringify({ ok: false, error: 'forbidden' }));
-      var stream = iptvModule.streamUrl(String(qs.pl || ''), String(qs.key || ''));
-      if (!stream) return send(res, 404, JSON.stringify({ ok: false, error: 'no-stream' }));
-      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-      return res.end(JSON.stringify({ ok: true, url: stream.url, format: stream.format, account: stream.account, maxConnections: stream.maxConnections }));
+      // full=1: the full-screen player, which may play a recording it can pause (lib/iptv-timeshift).
+      return iptvModule.playUrl(String(qs.pl || ''), String(qs.key || ''), qs.full === '1', function (stream) {
+        if (!stream) return send(res, 404, JSON.stringify({ ok: false, error: 'no-stream' }));
+        res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify({ ok: true, url: stream.url, format: stream.format, account: stream.account, maxConnections: stream.maxConnections,
+          switchable: stream.switchable, timeshift: stream.timeshift === true }));
+      });
+    }
+    if (pathname === '/api/iptv/timeshift') {
+      if (qs.pl === undefined) return iptvModule.timeshiftStatus(reply);
+      var ts = iptvModule.timeshiftStats(String(qs.pl || ''), String(qs.key || ''));
+      return reply(ts ? { ok: true, behind: ts.behind, capacity: ts.capacity, kept: ts.kept } : { ok: true, behind: null, capacity: null, kept: null });
     }
   }
   if (req.method === 'POST') {
@@ -1369,6 +1453,9 @@ function handleIptvRoute(req, res, u, pathname) {
       if (pathname === '/api/iptv/selection') return iptvModule.setSelection(body, reply);
       if (pathname === '/api/iptv/lineup') return iptvModule.setLineup(body, reply);
       if (pathname === '/api/iptv/lease') return reply(iptvModule.lease(body && body.on === true, body && body.full === true));
+      if (pathname === '/api/iptv/event') return reply(iptvModule.streamEvent(body));
+      if (pathname === '/api/iptv/output') return reply(iptvModule.setOutput(body));
+      if (pathname === '/api/iptv/timeshift') return reply(iptvModule.setTimeshift(body));
       if (pathname === '/api/iptv/check') return iptvModule.checkStream(String(body && body.pl || ''), String(body && body.key || ''), reply);
       send(res, 404, JSON.stringify({ ok: false, error: 'not found' }));
     }, pathname === '/api/iptv/lineup' ? 524288 : 8192);
@@ -1380,6 +1467,15 @@ function handleRequest(req, res) {
   var u = parseUrl(req.url);
   var pathname = u.pathname;
   /** @type {any} */ (res).glasshouseLang = say.langOf(req);
+
+  // Google's desktop OAuth client returns to the tunnel's loopback origin.
+  // Its one-use state and PKCE verifier authorize this callback, not a dashboard key.
+  if (req.method === 'GET' && pathname === '/' && u.query && u.query.state && (u.query.code || u.query.error) && homeModule) {
+    return homeModule.widgets.calendar.auth.callback(u.query, 'http://' + req.headers.host, function () {
+      res.writeHead(303, { 'Location': '/#home', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+      res.end();
+    });
+  }
 
   if (pathname === '/' || pathname === '/index.html') {
     if (UI_HTML) {
@@ -1460,7 +1556,7 @@ function handleRequest(req, res) {
     // longer has, or miss text it now does.
     // So is the script a custom launcher is given: a launcher written for a
     // newer one calls what an older copy lacks.
-    var fresh = ext === '.html' || ext === '.json' || /(^|\/)(i18n|home-kit)\.js$/.test(file);
+    var fresh = ext === '.html' || ext === '.json' || path.basename(file) === 'home-calendar.css' || /(^|\/)(i18n|home-kit|widget-kit|widget-layout|home-widget-panel|home-widgets-view|home-football-view|home-calendar-view)\.js$/.test(file);
     var cacheHdr = fresh ? 'no-cache' : 'public, max-age=86400';
     var respondWithBuf = function (buf) {
       var etag = '"' + (displayVersionStr || '1') + '-' + buf.length.toString(16) + '"';
@@ -1481,6 +1577,19 @@ function handleRequest(req, res) {
     }
     return fs.readFile(file, function (e, buf) {
       if (e) return send(res, 500, JSON.stringify({ ok: false, error: 'read failed' }));
+      // Home recolours #look for the owner's palette. Include the fork material
+      // there before its script reads it, so it follows the same palette too.
+      if (pathname === '/assets/home.html') {
+        var appearance = assetPath('home-liquid-glass.css');
+        if (!appearance) return send(res, 500, JSON.stringify({ ok: false, error: 'Home appearance missing' }));
+        try {
+          var material = fs.readFileSync(appearance, 'utf8');
+          buf = new Buffer(buf.toString('utf8').replace('</style>', '\n' + material + '\n</style>')
+            .replace('<link rel="stylesheet" href="/assets/home-liquid-glass.css">', ''), 'utf8');
+        } catch (appearanceError) {
+          return send(res, 500, JSON.stringify({ ok: false, error: 'Home appearance unreadable' }));
+        }
+      }
       ASSET_CACHE[file] = buf;
       respondWithBuf(buf);
     });
@@ -1506,13 +1615,28 @@ function handleRequest(req, res) {
       origin: lanOrigin(), version: versionStr,
       fromHomebrewChannel: fromHomebrewChannel(), setupNeeded: setupPending(),
       // The hour cycle the dashboard's own clock draws.
-      clockHour12: clockHour12()
+      clockHour12: clockHour12(),
+      pointer: !!(pointerModule && pointerModule.isEnabled()),
+      pointerSupported: !!(pointerModule && pointerModule.isSupported()),
+      pointerTransport: config.pointer && config.pointer.transport || 'websocket',
+      pointerRate: config.pointer && config.pointer.updatesPerSecond || 120
     };
     // The token goes into the TV's QR codes, so a phone that scans one can use
     // what it opens. Only to the TV itself: whoever sees the screen holds the
     // remote, and the remote needs no token.
     if (config.token && fromTV(req)) caps.key = config.token;
     return send(res, 200, JSON.stringify(caps));
+  }
+
+  if (pathname === '/api/pointer') {
+    if (!pointerModule || !pointerModule.isEnabled()) return send(res, 404, JSON.stringify({ ok: false, error: 'not found' }));
+    if (req.method !== 'POST') return send(res, 405, JSON.stringify({ ok: false, error: 'method not allowed' }));
+    if (!config.allowControl) return send(res, 403, JSON.stringify({ ok: false, error: msg('srv.controlsOff', 'controls disabled in config') }));
+    return readJsonBody(req, res, function (body) {
+      pointerModule.send(body, function (r) {
+        send(res, r.ok ? 200 : 400, JSON.stringify(r));
+      });
+    });
   }
 
   if (pathname === '/api/audio' && audioModule) {
@@ -1561,6 +1685,97 @@ function handleRequest(req, res) {
 
   if (pathname === '/api/screensaver') {
     return send(res, 200, JSON.stringify(screensaversModule.screensaverList()));
+  }
+
+  /* A screen saver's own Home Assistant readings. The saver's saver.json names
+     the entities it draws and the server hands it one address per name; this
+     serves those and nothing else while that saver is on the TV, so a QML file
+     on the TV cannot ask for anything it did not declare. */
+  if (pathname.indexOf('/api/entity/') === 0) {
+    if (!authed(u.query, req)) return send(res, 401, JSON.stringify({ ok: false, error: 'unauthorised' }));
+    if (!haEntityModule) {
+      return send(res, 503, JSON.stringify({ ok: false, error: 'Home Assistant is not configured' }));
+    }
+    var wanted = '';
+    try { wanted = decodeURIComponent(pathname.slice('/api/entity/'.length)); } catch (e) {}
+    var declared = screensaversModule ? screensaversModule.screensaverEntities() : null;
+    var allowedId = false;
+    for (var key in declared) {
+      if (Object.prototype.hasOwnProperty.call(declared, key) && declared[key] === wanted) allowedId = true;
+    }
+    if (!allowedId) {
+      return send(res, 404, JSON.stringify({
+        ok: false,
+        error: 'the screen saver on the TV does not declare ' + wanted.slice(0, 80)
+      }));
+    }
+    return haEntityModule.read(wanted, function (r) {
+      if (r && r.ok && screensaversModule) {
+        var customLbl = screensaversModule.screensaverEntityLabel(wanted);
+        if (customLbl) r.label = customLbl;
+      }
+      send(res, r.ok ? 200 : 502, JSON.stringify(r));
+    });
+  }
+
+  if (pathname === '/api/ha/test' && req.method === 'POST') {
+    if (!authed(u.query, req)) return send(res, 401, JSON.stringify({ ok: false, error: 'unauthorized' }));
+    if (!config.allowControl) {
+      return send(res, 403, JSON.stringify({ ok: false, error: msg('srv.controlsOff', 'controls disabled in config') }));
+    }
+    return readJsonBody(req, res, function (body) {
+      if (!haEntityModule) return send(res, 503, JSON.stringify({ ok: false, error: 'Home Assistant module not loaded' }));
+      var testUrl = body && body.url;
+      var testToken = body && body.token;
+      haEntityModule.test({ url: testUrl, token: testToken }, function (r) {
+        send(res, r.ok ? 200 : 400, JSON.stringify(r));
+      });
+    });
+  }
+
+  if (pathname === '/api/ha/save' && req.method === 'POST') {
+    if (!authed(u.query, req)) return send(res, 401, JSON.stringify({ ok: false, error: 'unauthorized' }));
+    if (!config.allowControl) {
+      return send(res, 403, JSON.stringify({ ok: false, error: msg('srv.controlsOff', 'controls disabled in config') }));
+    }
+    return readJsonBody(req, res, function (body) {
+      if (!haEntityModule) return send(res, 503, JSON.stringify({ ok: false, error: 'Home Assistant module not loaded' }));
+      var haSaved = validateHaSettings(body);
+      if (haSaved.errors.length) {
+        return send(res, 400, JSON.stringify({ ok: false, error: haSaved.errors.join('; ') }));
+      }
+      if (installBusyRefusal(res)) return;
+      writeSettings({ homeAssistant: haSaved.value }, function (err) {
+        if (err) {
+          return send(res, 500, JSON.stringify({ ok: false, error: 'could not write ' + configFilePath + ': ' + err.message }));
+        }
+        applyHaConfig(haSaved.value);
+        console.log('config: saved Home Assistant API settings to ' + configFilePath);
+        send(res, 200, JSON.stringify({
+          ok: true,
+          enabled: config.homeAssistant.enabled !== false,
+          url: config.homeAssistant.url || '',
+          tokenSet: !!(config.homeAssistant.token),
+          configured: haEntityModule.configured(),
+          status: (typeof haEntityModule.status === 'function') ? haEntityModule.status() : null
+        }));
+      });
+    });
+  }
+
+  if (pathname === '/api/ha/entities' && req.method === 'GET') {
+    if (!authed(u.query, req)) return send(res, 401, JSON.stringify({ ok: false, error: 'unauthorized' }));
+    if (!haEntityModule || !haEntityModule.configured()) {
+      return send(res, 200, JSON.stringify({ ok: true, configured: false, entities: [] }));
+    }
+    return haEntityModule.list(function (r) {
+      send(res, r.ok ? 200 : 502, JSON.stringify({
+        ok: !!r.ok,
+        configured: true,
+        entities: r.entities || [],
+        error: r.error
+      }));
+    });
   }
 
   if (pathname === '/api/hdmi') {
@@ -1916,7 +2131,11 @@ function handleRequest(req, res) {
             if (!remoteKeysModule) return send(res, 200, JSON.stringify(d));
             remoteKeysModule.getRemoteKeys(function (rk) {
               d.remoteKeys = rk && rk.supported ? rk : null;
-              send(res, 200, JSON.stringify(d));
+              if (!appDnsModule) return send(res, 200, JSON.stringify(d));
+              appDnsModule.getAppDns(function (ad) {
+                d.appDns = ad && ad.supported ? ad.apps : null;
+                send(res, 200, JSON.stringify(d));
+              });
             });
           });
         });
@@ -2101,6 +2320,18 @@ function handleRequest(req, res) {
     });
   }
 
+  if (pathname === '/api/appdns' && req.method === 'POST') {
+    if (!config.allowControl) {
+      return send(res, 403, JSON.stringify({ ok: false, error: msg('srv.controlsOff', 'controls disabled in config') }));
+    }
+    return readJsonBody(req, res, function (body) {
+      if (!appDnsModule) return send(res, 503, JSON.stringify({ ok: false, error: 'per-app DNS unavailable' }));
+      appDnsModule.setAppDns(body && body.id, body && body.servers, function (r) {
+        send(res, r && r.ok ? 200 : 400, JSON.stringify(r));
+      });
+    });
+  }
+
   // While switched off the endpoint does not exist: it falls through to the 404.
   if (pathname === '/api/prometheus/metrics' && prometheusEnabled()) {
     return telemetryModule.collectStats(function (s) {
@@ -2114,7 +2345,7 @@ function handleRequest(req, res) {
   if (pathname === '/api/stats') {
     return telemetryModule.collectStats(function (s) {
       // PicCap's capture and Hue Sync's streaming, where installed, for the
-      // Advanced tab.
+      // Ambient Light tab.
       piccapStatusFn(function (pc) {
         huesyncStatusFn(function (hs) {
           var keyboardUp = keyboardUpFn();
@@ -2125,8 +2356,8 @@ function handleRequest(req, res) {
           var copy = {};
           for (var k in s) copy[k] = s[k];
           if (clockModule) copy.clockHour12 = clockHour12();
-          if (pc) copy.piccapCapture = pc;
-          if (hs) copy.huesyncStreaming = hs;
+          if (pc) { pc.writable = config.allowControl === true; copy.piccapCapture = pc; }
+          if (hs) { hs.writable = config.allowControl === true; copy.huesyncStreaming = hs; }
           if (scans !== undefined) copy.deviceScans = scans;
           // For the Control tab's keyboard box.
           if (keyboardUp !== null) copy.keyboardUp = keyboardUp;
@@ -2185,30 +2416,13 @@ function handleRequest(req, res) {
     if (!config.allowControl) {
       return send(res, 403, JSON.stringify({ ok: false, error: msg('srv.controlsOff', 'controls disabled in config') }));
     }
-    if (String(req.headers['content-type'] || '').toLowerCase().indexOf('application/json') !== 0) {
-      return send(res, 415, JSON.stringify({ ok: false, error: 'Content-Type must be application/json' }));
-    }
-    var borigin = req.headers.origin;
-    if (borigin && String(borigin).replace(/^https?:\/\//, '') !== String(req.headers.host || '')) {
-      return send(res, 403, JSON.stringify({ ok: false, error: 'cross-origin request refused' }));
-    }
-    var bbody = '';
-    req.on('data', function (d) {
-      bbody += d;
-      if (bbody.length > 65536) req.destroy();
-    });
-    req.on('end', function () {
-      var b = null;
-      try { b = JSON.parse(bbody); } catch (e) {
-        return send(res, 400, JSON.stringify({ ok: false, error: 'malformed JSON' }));
-      }
+    return readJsonBody(req, res, function (b) {
       if (installBusyRefusal(res)) return;
       backupModule.restore(b, function (r) {
         send(res, r.ok ? 200 : 400, JSON.stringify(r));
         if (r.restart) restartSoon(250, 'backup');
       });
-    });
-    return;
+    }, 1024 * 1024);
   }
 
   if (pathname === '/api/settings' && req.method === 'POST') {
@@ -2243,6 +2457,7 @@ function handleRequest(req, res) {
         if (err) {
           return send(res, 500, JSON.stringify({ ok: false, error: 'could not write ' + configFilePath + ': ' + err.message }));
         }
+        applyHaConfig(v.value.homeAssistant);
         console.log('config: saved to ' + configFilePath + ', restarting to apply');
         send(res, 200, JSON.stringify({ ok: true, restarting: true }));
         restartSoon(250, 'settings');
@@ -2292,6 +2507,7 @@ function init(opts) {
   if (opts.config) config = opts.config;
   if (opts.configFile) configFilePath = opts.configFile;
   if (opts.controls) controlsModule = opts.controls;
+  if (opts.pointer) pointerModule = opts.pointer;
   if (opts.telemetry) telemetryModule = opts.telemetry;
   if (opts.oled) oledModule = opts.oled;
   if (opts.privacy) privacyModule = opts.privacy;
@@ -2302,6 +2518,7 @@ function init(opts) {
   if (opts.apps) appsModule = opts.apps;
   if (opts.services) servicesModule = opts.services;
   if (opts.preload) preloadModule = opts.preload;
+  if (opts.appDns) appDnsModule = opts.appDns;
   if (opts.quickAccess) quickAccessModule = opts.quickAccess;
   if (opts.remoteKeys) remoteKeysModule = opts.remoteKeys;
   if (opts.homeScreen) homeScreenModule = opts.homeScreen;
@@ -2311,6 +2528,8 @@ function init(opts) {
   if (opts.homeLauncher) homeLauncherModule = opts.homeLauncher;
   if (opts.iptv) iptvModule = opts.iptv;
   if (opts.screensavers) screensaversModule = opts.screensavers;
+  if (opts.haEntity) haEntityModule = opts.haEntity;
+  if (opts.inputBar) inputBarModule = opts.inputBar;
   if (opts.updater) updaterModule = opts.updater;
   if (opts.logs) logsModule = opts.logs;
   if (opts.tvApp) tvAppFn = opts.tvApp;
