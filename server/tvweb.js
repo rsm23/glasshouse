@@ -19,7 +19,7 @@
  * first 4096 bytes of a downloaded tvweb.js for this line (up to 0.82.2), and
  * refuses a release where it is further down (#586).
  */
-var TVWEB_VERSION = '0.144.2';
+var TVWEB_VERSION = '0.146.2';
 
 var http = require('http');
 var fs = require('fs');
@@ -92,6 +92,7 @@ try {
 }
 var telemetry = require('./lib/telemetry');
 var controls = require('./lib/controls');
+var pointer = require('./lib/pointer');
 var routes = require('./lib/routes');
 var prometheus = require('./lib/prometheus');
 var stateModule = require('./lib/state');
@@ -220,9 +221,11 @@ var CONFIG = {
   // allowOnWebos10 until 0.105, and migrateConfigFile() renames that.
   allowExperimentalScreensavers: false,
   allowExperimentalInputBar: false,
+  pointer: { enabled: true, transport: 'websocket', updatesPerSecond: 120 },
 
-  // Glasshouse Home is offered on webOS 9 and 10, where it has been tried.
-  // This lets it be switched on on webOS 11 too, untried there. File-only.
+  // Glasshouse Home is offered on webOS 4 to 7 and 9 to 11, where it has been
+  // tried. This lets it be switched on on webOS 3 and 12 and later too,
+  // untried there. File-only.
   allowExperimentalHome: false,
 
   // Hiding built-in system tiles is experimental: restarting the app manager
@@ -716,6 +719,7 @@ controls.init({
   huesync: huesync,
   clearLunaCache: clearLunaCache,
   config: CONFIG,
+  pointerChanged: function () { if (!pointer.isEnabled()) pointer.stop(); },
   telemetry: telemetry,
   oled: oled,
   privacy: privacy,
@@ -981,8 +985,11 @@ function appsChanged() {
   telemetry.refreshInstalledApps(function () { publishNow(); });
 }
 
+pointer.init({ luna: luna, hasService: lunaTransport.hasService, config: CONFIG,
+  authed: function (req) { return routes.authed(url.parse(req.url || '/', true).query, req); } });
 routes.init({
   config: CONFIG,
+  pointer: pointer,
   inputBar: inputBar,
   audio: audioCapabilities,
   btAudio: btAudio,
@@ -1078,6 +1085,9 @@ if (!CLI_MODE) backup.startDaily();
 if (WEB_ENABLED && !CLI_MODE) routes.loadUI();   // otherwise nothing will serve it
 
 var server = http.createServer(routes.handleRequest);
+server.on('upgrade', function (req, socket, head) {
+  if (!pointer.handleUpgrade(req, socket, head)) socket.destroy();
+});
 
 var webEnabled = WEB_ENABLED;
 var mqttEnabled = !!(CONFIG.mqtt && CONFIG.mqtt.enabled && CONFIG.mqtt.host);
@@ -1892,12 +1902,14 @@ function setupHomeAssistant() {
   });
 
   process.on('SIGTERM', function() {
+    pointer.stop();
     remotebuttons.stop();
     iconServer.stop();
     if (mqttClient) mqttClient.disconnect();
     process.exit(0);
   });
   process.on('SIGINT', function() {
+    pointer.stop();
     remotebuttons.stop();
     iconServer.stop();
     if (mqttClient) mqttClient.disconnect();
