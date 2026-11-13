@@ -5,6 +5,15 @@
 
 ![Glasshouse Home on an OLED55G36LA (webOS 9.2): clock and the Apps, Inputs and Channels rows over an uploaded afternoon wallpaper](../screenshots/home.jpg)
 
+> [!NOTE]
+> The Liquid Glass preview below uses an emulated TV in a browser; it is not a physical-TV capture.
+
+![Liquid Glass Home, browser preview](../screenshots/liquid-glass-home-preview.png)
+
+This fork uses a tvOS-inspired Liquid Glass appearance: rounded widget surfaces,
+soft highlights and a bright outline on the focused app or widget. TVs without
+blur support use shaded surfaces. The uploaded wallpaper remains the background.
+
 ## What is on screen
 
 Glasshouse Home displays a clock and date (following the TV's 12-hour or 24-hour time setting), the last active source or app, and up to five rows (any row with no visible items is automatically hidden). When there are more rows than fit, they scroll to keep the one in focus in view:

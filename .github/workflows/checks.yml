@@ -43,6 +43,9 @@ jobs:
       - name: documented entity list and deploy list match the code
         run: ./scripts/check-drift.py
 
+      - name: fork Liquid Glass appearance survives upstream changes
+        run: python3 scripts/check-fork-ui.py && python3 scripts/test-fork-ui.py
+
       # An entity that goes or is renamed breaks the automations that used it.
       - name: no Home Assistant entity from the last release gone without a reason
         run: ./scripts/check-entity-stability.py

@@ -3967,6 +3967,57 @@ async function visitTvHuesync(browser, base, problems) {
   } finally { await page.unrouteAll({ behavior: 'wait' }); await page.close(); }
 }
 
+async function visitHomeLiquidGlass(browser, base, problems) {
+  const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+  page.on('pageerror', e => problems.push('Liquid Glass: ' + e.message));
+  const widgets = require('../server/lib/home-widgets').normalise({
+    weather: { enabled: true, location: { name: 'Paris, France', latitude: 48.85, longitude: 2.35 } },
+    football: { enabled: true, teams: [{ id: '160', name: 'Paris Saint-Germain' }] },
+    positions: { clock: 'left', weather: 'center', football: 'right' }
+  });
+  const layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] }, hidden: { app: [], dev: [], ch: [] }, channels: [],
+    showClock: true, showLastOn: false, picture: false, livePreview: false,
+    hintSeen: true, searchHintSeen: true, widgets };
+  await page.route('**/api/home**', route => {
+    const pathname = new URL(route.request().url()).pathname;
+    const reply = body => route.fulfill({ json: body });
+    if (pathname === '/api/home') return reply({ ok: true, supported: { ok: true }, enabled: true, active: true, writable: true, layout });
+    if (pathname === '/api/home/catalogue') return reply({ ok: true, layout, layoutVersion: 'glass',
+      apps: [], devices: [], channels: [], order: { app: ['lg-home'], dev: [], ch: [] }, sources: {} });
+    if (pathname === '/api/home/widgets/weather') return reply(require('../test/mocks/widget-forecast')());
+    if (pathname === '/api/home/widgets/football') return reply({ ok: true, available: true, matches: [{ id: 'example', date: '2026-11-13T18:00:00Z', league: 'Example match', home: { name: 'Home team', score: 2 }, away: { name: 'Away team', score: 1 } }], nextMatches: [], missingTeams: [], leagues: [], mode: 'live' });
+    return reply({ ok: true, layoutVersion: 'glass', build: 'glass', covered: false });
+  });
+  try {
+    await page.setViewportSize({ width: 1920, height: 1080 });
+    await page.goto(base + '/assets/home.html');
+    await page.locator('#widget-weather').waitFor();
+    await page.locator('#widget-football').waitFor();
+    const home = await page.locator('#when').evaluate(el => ({ width: el.offsetWidth, height: el.offsetHeight, radius: getComputedStyle(el).borderRadius }));
+    if (home.width !== 360 || home.height !== 200 || home.radius !== '28px') problems.push('Liquid Glass: Home material changed widget slot geometry or did not load');
+    await page.locator('#widget-weather').click();
+    await page.locator('#widget--panel').waitFor();
+    const panel = await page.locator('#widget--panel').evaluate(el => {
+      const box = el.getBoundingClientRect();
+      return { inset: box.left > 0 && box.top > 0 && box.right <= innerWidth && box.bottom <= innerHeight,
+        focus: el.contains(document.activeElement) };
+    });
+    if (!panel.inset || !panel.focus) problems.push('Liquid Glass: forecast sheet or focus escaped the stage');
+    await page.keyboard.press('Escape');
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const transition = await page.locator('#when').evaluate(el => getComputedStyle(el).transitionDuration);
+    if (transition !== '0s') problems.push('Liquid Glass: reduced motion retained widget transitions');
+    // Simulate an engine without @supports: the base material and focus must stand alone.
+    await page.evaluate(() => {
+      const sheet = document.getElementById('look').sheet;
+      for (let i = sheet.cssRules.length - 1; i >= 0; i--) if (sheet.cssRules[i].type === CSSRule.SUPPORTS_RULE) sheet.deleteRule(i);
+    });
+    await page.locator('#when').click();
+    const focus = await page.locator('#when').evaluate(el => getComputedStyle(el).outlineWidth);
+    if (focus !== '3px') problems.push('Liquid Glass: fallback lost the remote focus ring');
+  } finally { await page.close(); }
+}
+
 function groups(web, tv) {
   return [
     { job: 'tabs', tabs: web.map(t => ({ path: '/?tab=' + t, label: 'web ' + t })), visits: [visitHomeAnimations, visitHuesyncSettings] },
@@ -3976,7 +4027,7 @@ function groups(web, tv) {
     { job: 'home', tabs: [], visits: [visitHomeArrangement, visitHomeVisibility, visitHomeColours, visitHomeInputsEditor, visitHomeEditor,
       visitHomeRecentsHidden, visitHomeUploads, visitHomeShuffle, visitHomeLauncher, visitHomeReadiness, visitAudioOverride, visitHomeRecents, visitHomeGuide,
       visitHomeFadeAndInputs] },
-    { job: 'home', tabs: [], visits: [visitHomeInternetTv, visitIptvChannels, visitHomeWidgets, visitWidgetLayout, visitWidgetStore, visitHomeFootball] },
+    { job: 'home', tabs: [], visits: [visitHomeInternetTv, visitIptvChannels, visitHomeWidgets, visitWidgetLayout, visitWidgetStore, visitHomeFootball, visitHomeLiquidGlass] },
     /*
      * Scrolling and motion read the row's place frame by frame, and missed
      * frames with the other groups sharing CI's four cores: 3 of 15 runs

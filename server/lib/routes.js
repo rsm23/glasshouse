@@ -1563,6 +1563,19 @@ function handleRequest(req, res) {
     }
     return fs.readFile(file, function (e, buf) {
       if (e) return send(res, 500, JSON.stringify({ ok: false, error: 'read failed' }));
+      // Home recolours #look for the owner's palette. Include the fork material
+      // there before its script reads it, so it follows the same palette too.
+      if (pathname === '/assets/home.html') {
+        var appearance = assetPath('home-liquid-glass.css');
+        if (!appearance) return send(res, 500, JSON.stringify({ ok: false, error: 'Home appearance missing' }));
+        try {
+          var material = fs.readFileSync(appearance, 'utf8');
+          buf = new Buffer(buf.toString('utf8').replace('</style>', '\n' + material + '\n</style>')
+            .replace('<link rel="stylesheet" href="/assets/home-liquid-glass.css">', ''), 'utf8');
+        } catch (appearanceError) {
+          return send(res, 500, JSON.stringify({ ok: false, error: 'Home appearance unreadable' }));
+        }
+      }
       ASSET_CACHE[file] = buf;
       respondWithBuf(buf);
     });

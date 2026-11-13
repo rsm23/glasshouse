@@ -39,6 +39,8 @@ run ui-ids python3 scripts/check-ui-ids.py
 run strings python3 scripts/check-strings.py
 run screensavers python3 scripts/check-screensavers.py
 run drift python3 scripts/check-drift.py
+run fork-ui python3 scripts/check-fork-ui.py
+run fork-ui-tests python3 scripts/test-fork-ui.py
 run entity-stability python3 scripts/check-entity-stability.py
 run entities python3 scripts/check-entities.py --stats test/fixtures/stats-b8-webos4.json
 run shellcheck shellcheck server/deploy.sh server/tvwebctl server/50-tvweb.sh tvstats.sh scripts/check-all.sh scripts/tv.sh

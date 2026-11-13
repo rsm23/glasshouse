@@ -284,3 +284,12 @@ If you don't have a TV to test on, or the change affects TVs you don't have, say
 ### Help by testing on your TV
 
 Some changes can only be checked on TVs the maintainers don't have, such as newer or less common models. If you have a rooted LG TV, you can help without writing any code: pull requests and issues labelled [testers wanted](https://github.com/rorygallagher2024/glasshouse/labels/testers%20wanted) say what to run and what to send back.
+
+## Fork appearance
+
+This fork uses a tvOS-inspired Liquid Glass layer only on Glasshouse Home on
+the TV. Keep its styles separate from upstream styles. The web dashboard and
+TV settings dashboard retain upstream styling.
+For official updates, use the [merge helper](development/FORK-UI.md#merge-an-official-update)
+and review the appearance before committing. A changed theme baseline must be
+intentional; never refresh it to hide a merge regression.

@@ -1,5 +1,10 @@
 # What the dashboard changes on the TV
 
+In this fork, Glasshouse Home loads an additional Liquid Glass-inspired
+stylesheet. It changes Home tiles, widget surfaces, detail sheets and focus
+indicators. Older browser engines use shaded materials without backdrop blur.
+
+
 ## Audio capabilities and DTS forwarding
 
 The Audio tabs read LG's capability, settings and ARC services, the current

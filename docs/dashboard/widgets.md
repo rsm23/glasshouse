@@ -6,6 +6,11 @@ Open the web dashboard, choose **Home > Home customisation > Top widgets >
 Manage widgets**. The Home page shows only the current placement summary.
 LG Home, Glasshouse Minimal and custom launchers have their own layouts.
 
+On the TV, this fork gives Home widgets rounded glass-like surfaces and a bright
+focus outline. **OK** opens an inset forecast or detail sheet.
+
+![Home forecast sheet, emulated browser preview with sample weather](../screenshots/liquid-glass-forecast-preview.png)
+
 The dialog has three tabs: **Widgets** for visibility and settings, **Layout**
 for positions and order, and **Store** for browsing and importing. On a computer,
 select a widget in the list to edit it beside the list. Each row has an On/Off
