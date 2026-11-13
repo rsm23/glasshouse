@@ -2194,7 +2194,10 @@ h3 .tvm-tags i{font-size:11px}
 .home-widget-fields label{display:flex;align-items:center;flex-wrap:wrap;gap:8px;max-width:100%}
 .home-widget-fields input:not([type=checkbox]){min-width:0;max-width:100%;padding:8px;border:1px solid var(--w25);border-radius:6px;background:var(--bg);color:var(--w90);font:inherit;box-sizing:border-box}
 .home-widget-search{display:flex;align-items:flex-end;flex-wrap:wrap;gap:8px}
-.home-football-fields>label,.home-football-selected,.home-football-choices{width:100%;min-width:0}
+.home-football-fields>label,.home-football-selected,.home-football-choices,.home-calendar-fields>label{width:100%;min-width:0}
+.home-calendar-fields p{width:100%;overflow-wrap:anywhere}
+.home-calendar-fields input[type=file]{max-width:100%;min-width:0}
+.home-calendar-fields a{color:inherit;text-decoration:underline}
 .home-football-choices{max-height:240px;overflow-y:auto;border:1px solid var(--edge);border-radius:6px;padding:8px}
 .home-football-choices label{padding:8px;min-height:44px;flex-wrap:nowrap;cursor:pointer}
 .home-football-choices [hidden]{display:none}

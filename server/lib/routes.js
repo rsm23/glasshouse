@@ -1254,6 +1254,8 @@ function handleHomeRoute(req, res, u, pathname) {
     }
     if (pathname === '/api/home/widgets/weather') return homeModule.widgets.weather(homeModule.layout().widgets, reply);
     if (pathname === '/api/home/widgets/football') return homeModule.widgets.football.read(homeModule.layout().widgets.football, reply);
+    if (pathname === '/api/home/widgets/calendar') return homeModule.widgets.calendar.read(homeModule.layout().widgets.calendar, reply);
+    if (pathname === '/api/home/widgets/calendar/status') return reply(homeModule.widgets.calendar.auth.status());
     if (pathname === '/api/home/widgets/store') return homeModule.widgets.store.read(reply, u.query && u.query.refresh === '1');
     if (pathname === '/api/home/channels') {
       return homeModule.channelList(function (list) { reply({ ok: true, channels: list, tuner: !!list }); });
@@ -1330,6 +1332,9 @@ function handleHomeRoute(req, res, u, pathname) {
       if (pathname === '/api/home/widgets/locations') return homeModule.widgets.locations(body && body.query, reply);
       if (pathname === '/api/home/widgets/football/leagues') return homeModule.widgets.football.leagues(reply);
       if (pathname === '/api/home/widgets/football/teams') return homeModule.widgets.football.teams(body && body.league, reply);
+      if (pathname === '/api/home/widgets/calendar/connect') return reply(homeModule.widgets.calendar.auth.start(body, 'http://' + req.headers.host));
+      if (pathname === '/api/home/widgets/calendar/calendars') return homeModule.widgets.calendar.calendars(reply);
+      if (pathname === '/api/home/widgets/calendar/disconnect') return homeModule.widgets.calendar.auth.disconnect(reply);
       if (pathname === '/api/home/start-layout') return homeModule.setHideLgHomeAtStart(body, reply);
       if (pathname === '/api/home/wallpapers') return homeModule.setWallpapers(body, reply);
       if (pathname === '/api/home/enable') return homeModule.enable(reply);
@@ -1463,6 +1468,15 @@ function handleRequest(req, res) {
   var pathname = u.pathname;
   /** @type {any} */ (res).glasshouseLang = say.langOf(req);
 
+  // Google's desktop OAuth client returns to the tunnel's loopback origin.
+  // Its one-use state and PKCE verifier authorize this callback, not a dashboard key.
+  if (req.method === 'GET' && pathname === '/' && u.query && u.query.state && (u.query.code || u.query.error) && homeModule) {
+    return homeModule.widgets.calendar.auth.callback(u.query, 'http://' + req.headers.host, function () {
+      res.writeHead(303, { 'Location': '/#home', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+      res.end();
+    });
+  }
+
   if (pathname === '/' || pathname === '/index.html') {
     if (UI_HTML) {
       var gzip = !!UI_HTML_GZ && (req.headers['accept-encoding'] || '').indexOf('gzip') !== -1;
@@ -1542,7 +1556,7 @@ function handleRequest(req, res) {
     // longer has, or miss text it now does.
     // So is the script a custom launcher is given: a launcher written for a
     // newer one calls what an older copy lacks.
-    var fresh = ext === '.html' || ext === '.json' || /(^|\/)(i18n|home-kit|widget-kit|widget-layout|home-widget-panel|home-widgets-view|home-football-view)\.js$/.test(file);
+    var fresh = ext === '.html' || ext === '.json' || path.basename(file) === 'home-calendar.css' || /(^|\/)(i18n|home-kit|widget-kit|widget-layout|home-widget-panel|home-widgets-view|home-football-view|home-calendar-view)\.js$/.test(file);
     var cacheHdr = fresh ? 'no-cache' : 'public, max-age=86400';
     var respondWithBuf = function (buf) {
       var etag = '"' + (displayVersionStr || '1') + '-' + buf.length.toString(16) + '"';

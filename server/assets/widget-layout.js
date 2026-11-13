@@ -13,6 +13,7 @@
     if (id === 'clock') return layout.showClock !== false;
     if (id === 'weather') return layout.widgets.weather.enabled;
     if (id === 'football') return !!(layout.widgets.football && layout.widgets.football.enabled);
+    if (id === 'calendar') return !!(layout.widgets.calendar && layout.widgets.calendar.enabled);
     var item = custom(layout, id);
     return !!(item && item.enabled);
   }
@@ -58,6 +59,7 @@
     ids.forEach(function (id) { reasons = reasons.concat(requirements(layout, (layout.widgets.positions || {})[id])); });
     if (ids.some(function (id) { return weather(layout, id); }) && !layout.widgets.weather.location) reasons.push('weatherLocation');
     if (enabled(layout, 'football') && !layout.widgets.football.leagues.length && !layout.widgets.football.teams.length) reasons.push('footballLeagues');
+    if (enabled(layout, 'calendar') && !layout.widgets.calendar.calendars.length) reasons.push('calendarSelection');
     if (!placement(layout).ok && !reasons.length) reasons.push('capacity');
     return unique(reasons);
   }

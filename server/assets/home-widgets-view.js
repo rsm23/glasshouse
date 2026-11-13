@@ -3,7 +3,9 @@
   var createPanel = /** @type {any} */ (window).CreateWidgetPanel;
   var footballView = /** @type {any} */ (window).FootballWidget;
   var layout = null, config = null, signature = '', revision = 0, paused = false, list = [];
-  var sources = { weather: null, tv: null, football: null }, requests = {}, timers = {};
+  var sources = { weather: null, tv: null, football: null, calendar: null }, requests = {}, timers = {};
+  var clockText = { time: '', meridiem: '', date: '' };
+  var widgetHeight = 200;
   var onSaved = function (_reply) {}, onOpen = function (_open) {};
   var canInteract = function () { return true; };
   function el(id) { return document.getElementById(id); }
@@ -27,13 +29,13 @@
   function read(source) {
     if (paused || document.hidden || !config || !used(source) || requests[source]) return;
     var version = revision;
-    var url = source === 'weather' ? '/api/home/widgets/weather' : source === 'football' ? '/api/home/widgets/football' : '/api/stats';
+    var url = source === 'weather' ? '/api/home/widgets/weather' : source === 'football' ? '/api/home/widgets/football' : source === 'calendar' ? '/api/home/widgets/calendar' : '/api/stats';
     requests[source] = json('GET', url, null, function (data) {
       if (version !== revision || paused || document.hidden) return;
       delete requests[source];
       sources[source] = data && data.ok !== false ? data : source !== 'tv' ? { available: false, matches: [] } : null;
       paintData();
-      var wait = source === 'football' ? data && data.loading ? 1000 : 60000 : source === 'tv' ? 60000 : data && data.available && !data.stale ? 15 * 60000 : 5 * 60000;
+      var wait = source === 'football' || source === 'calendar' ? data && data.loading ? 1000 : 60000 : source === 'tv' ? 60000 : data && data.available && !data.stale ? 15 * 60000 : 5 * 60000;
       timers[source] = setTimeout(function () { read(source); }, wait);
     });
   }
@@ -49,6 +51,16 @@
   function dataFor(w) {
     return w.source === 'static' ? w.values : w.source === 'weather' ? sources.weather && sources.weather.available ? sources.weather : null : sources.tv;
   }
+  function paintClock() {
+    list.forEach(function (w) {
+      if (!w.weather) return;
+      w.element.querySelector('.widget-weather-time').textContent = clockText.time;
+      w.element.querySelector('.widget-weather-meridiem').textContent = clockText.meridiem;
+      var date = w.element.querySelector('.widget-weather-date');
+      date.textContent = clockText.date;
+      date.hidden = !clockText.date;
+    });
+  }
   function paintWeather(w) {
     var data = sources.weather, available = data && data.available, current = available ? data.current || { temperature: data.temperature, code: data.code } : {};
     var units = data && data.units || { temperature: config.weather.units === 'fahrenheit' ? '°F' : '°C', wind: config.weather.windUnits === 'mph' ? 'mph' : 'km/h' };
@@ -59,8 +71,9 @@
     summary.appendChild(kit.node('div', 'widget-detail', available ? condition(current.code) : data === null ? I18N.t('home.widgets.loading', 'Loading weather…') : I18N.t('home.widgets.unavailable', 'Weather unavailable')));
     body.appendChild(summary);
     var today = available && data.today || {};
-    body.appendChild(kit.chart(today.temperature, today.labels, { label: I18N.t('home.widgets.todayTemperature', 'Today’s temperature'), unit: units.temperature, compact: true }));
-    body.appendChild(kit.chart(today.wind, today.labels, { label: I18N.t('home.widgets.todayWind', 'Today’s wind'), unit: units.wind, compact: true, style: 'bar' }));
+    var chartHeight = widgetHeight > 260 ? Math.max(34, (body.clientHeight - summary.offsetHeight) / 2 - 26) : 34;
+    body.appendChild(kit.chart(today.temperature, today.labels, { label: I18N.t('home.widgets.todayTemperature', 'Today’s temperature'), unit: units.temperature, compact: true, height: chartHeight }));
+    body.appendChild(kit.chart(today.wind, today.labels, { label: I18N.t('home.widgets.todayWind', 'Today’s wind'), unit: units.wind, compact: true, style: 'bar', height: chartHeight }));
     var status = w.element.querySelector('.widget-status');
     status.textContent = available && data.stale ? I18N.t('home.widgets.outdated', 'Last available weather') : '';
     w.data = data;
@@ -68,8 +81,16 @@
   function paintData() {
     list.forEach(function (w) {
       if (w.weather) paintWeather(w);
+      else if (w.calendar) {
+        w.data = sources.calendar;
+        /** @type {any} */ (window).CalendarWidget.render(w.element.querySelector('.widget-body'), w.data, true);
+        w.element.querySelector('.widget-status').textContent = w.data && w.data.partial ? I18N.t('home.calendar.partial', 'Some calendars are unavailable') : '';
+      }
       else if (w.football) {
         w.data = sources.football;
+        var data = w.data || {};
+        var contentHeight = (data.matches || []).length * 64 + (data.nextMatches || []).length * 78 + (data.missingTeams || []).length * 64 + 72;
+        w.element.style.height = widgetHeight > 260 ? Math.min(widgetHeight, Math.max(200, contentHeight)) + 'px' : '';
         footballView.render(w.element.querySelector('.widget-body'), w.data, true);
         w.element.querySelector('.widget-status').textContent = w.data && w.data.loading ? I18N.t('home.football.loadingScores', 'Loading scores…')
           : w.data && w.data.partial ? I18N.t('home.football.partial', 'Some scores are unavailable')
@@ -77,7 +98,16 @@
       }
       else if (w.components) {
         w.data = dataFor(w);
-        kit.render(w.element.querySelector('.widget-body'), w.components, w.data, true);
+        var body = w.element.querySelector('.widget-body');
+        kit.render(body, w.components, w.data, true);
+        if (widgetHeight > 260) {
+          var charts = 0, fixed = 0;
+          for (var i = 0; i < body.children.length; i++) {
+            if (body.children[i].classList.contains('wk-chart')) charts++;
+            else fixed += body.children[i].offsetHeight + 6;
+          }
+          if (charts) kit.render(body, w.components, w.data, true, Math.max(34, (body.clientHeight - fixed) / charts - 26));
+        }
         w.element.querySelector('.widget-status').textContent = w.data && w.data.stale ? I18N.t('home.widgets.outdated', 'Last available weather') : '';
       }
     });
@@ -95,12 +125,31 @@
     });
   }
   var panel = createPanel({ items: function () { return list; }, move: move, changed: function (open) { onOpen(open); } });
+  function resize(height) {
+    height = height > 260 ? height : 200;
+    var changed = widgetHeight !== height || list.some(function (w) { return (w.weather || w.components) && w.element.offsetHeight !== height; });
+    widgetHeight = height;
+    el('now').classList.toggle('widgets-tall', height > 260);
+    list.forEach(function (w) {
+      if (w.id === 'clock' || !w.weather && !w.football && !w.components) w.element.style.height = '';
+      else if (!w.football) w.element.style.height = height > 260 ? height + 'px' : '';
+      if (w.football) footballView.render(w.element.querySelector('.widget-body'), w.data, true);
+    });
+    if (changed) paintData();
+  }
   function addWidget(w, host) {
-    var box = kit.node('div', 'home-widget' + (w.weather || w.components || w.football ? ' widget-rich' : '') + (w.football ? ' widget-football' : ''));
+    var box = kit.node('div', 'home-widget' + (w.weather || w.components || w.football || w.calendar ? ' widget-rich' : '') + (w.football ? ' widget-football' : '') + (w.weather ? ' widget-weather' : '') + (w.calendar ? ' widget-calendar' : ''));
     box.id = 'widget-' + w.id;
+    if (w.weather) {
+      var clock = kit.node('div', 'widget-weather-clock'), time = kit.node('div', 'widget-weather-hours');
+      time.appendChild(kit.node('span', 'widget-weather-time'));
+      time.appendChild(kit.node('span', 'widget-weather-meridiem'));
+      clock.appendChild(time); clock.appendChild(kit.node('div', 'widget-weather-date'));
+      box.appendChild(clock);
+    }
     box.appendChild(kit.node('div', 'widget-name', w.title));
     var body = kit.node('div', 'widget-body'); box.appendChild(body);
-    if (!w.weather && !w.components && !w.football) { body.appendChild(kit.node('div', 'widget-value', w.value)); body.appendChild(kit.node('div', 'widget-detail', w.detail || '')); }
+    if (!w.weather && !w.components && !w.football && !w.calendar) { body.appendChild(kit.node('div', 'widget-value', w.value)); body.appendChild(kit.node('div', 'widget-detail', w.detail || '')); }
     box.appendChild(kit.node('div', 'widget-status'));
     host.appendChild(box); w.element = box; list.push(w);
   }
@@ -112,6 +161,7 @@
     signature = next; revision++; stop();
     if (!config || JSON.stringify(config.weather) !== JSON.stringify(settings.weather)) sources.weather = null;
     if (!config || JSON.stringify(config.football) !== JSON.stringify(settings.football)) sources.football = null;
+    if (!config || JSON.stringify(config.calendar) !== JSON.stringify(settings.calendar)) sources.calendar = null;
     config = settings;
     var host = el('widgets'), clock = el('when'); host.removeChild(clock); host.innerHTML = ''; list = [];
     (settings.order || ['clock', 'weather']).forEach(function (id) {
@@ -122,6 +172,7 @@
       }
       if (id === 'weather' && settings.weather.enabled) return addWidget({ id: id, title: settings.weather.location && settings.weather.location.name || I18N.t('home.widgets.weather', 'Weather'), weather: true, source: 'weather' }, host);
       if (id === 'football' && settings.football && settings.football.enabled) return addWidget({ id: id, title: I18N.t('home.football.title', 'Football scores'), football: true, source: 'football' }, host);
+      if (id === 'calendar' && settings.calendar && settings.calendar.enabled) return addWidget({ id: id, title: I18N.t('home.calendar.title', 'Google Calendar'), calendar: true, source: 'calendar' }, host);
       var custom = settings.custom || [];
       for (var i = 0; i < custom.length; i++) {
         var w = custom[i]; if (w.id !== id || !w.enabled) continue;
@@ -143,24 +194,25 @@
       w.element.onclick = function (e) { e.stopPropagation(); if (canInteract()) panel.open(w.id); };
     });
     if (placement && placement.manual) list.sort(function (a, b) { return a.element.offsetLeft - b.element.offsetLeft; });
-    paintData(); read('weather'); read('tv'); read('football');
+    paintClock(); paintData(); read('weather'); read('tv'); read('football'); read('calendar');
   }
   /** @type {any} */ (window).GlasshouseWidgets = {
-    render: render, key: panel.key, focus: panel.focus, blur: panel.blur, isOpen: panel.isOpen,
+    render: render, resize: resize, key: panel.key, focus: panel.focus, blur: panel.blur, isOpen: panel.isOpen,
+    clock: function (time, meridiem, date) { clockText = { time: time, meridiem: meridiem, date: date }; paintClock(); },
     configure: function (options) { onSaved = options.saved; onOpen = options.opened; canInteract = options.canInteract; },
     scroll: panel.scroll,
     reset: panel.reset,
     covered: function (on) {
       if (paused === on) return;
       paused = on; revision++; stop(); document.body.classList.toggle('football-paused', on);
-      sources.football = null; paintData();
-      if (on) panel.reset(); else { read('weather'); read('tv'); read('football'); }
+      sources.football = null; sources.calendar = null; paintData();
+      if (on) panel.reset(); else { read('weather'); read('tv'); read('football'); read('calendar'); }
     }
   };
   document.addEventListener('visibilitychange', function () {
     revision++; stop(); document.body.classList.toggle('football-paused', document.hidden);
-    sources.football = null; paintData();
-    if (document.hidden) panel.reset(); else { read('weather'); read('tv'); read('football'); }
+    sources.football = null; sources.calendar = null; paintData();
+    if (document.hidden) panel.reset(); else { read('weather'); read('tv'); read('football'); read('calendar'); }
   });
   window.addEventListener('pagehide', function () { revision++; stop(); panel.reset(); });
 })();

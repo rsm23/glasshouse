@@ -60,6 +60,7 @@ SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=6 -o StrictHostKeyChecking=accept-n
 STAGE=/var/lib/tvweb/.deploy     # on the TV; beside the install so moves are renames
 
 FILES="tvweb.js tvwebctl assets/ui.html assets/dashboard.html assets/favicon.svg \
+assets/ui/home-calendar.js assets/home-calendar-view.js assets/home-calendar.css lib/home-calendar.js lib/google-calendar-auth.js lib/google-calendar-http.js \
 assets/ui/ui.css assets/home-liquid-glass.css assets/ui/core.js assets/ui/theme.js assets/ui/format.js assets/ui/readouts.js \
 assets/ui/update.js assets/ui/controls.js assets/ui/privacy.js assets/ui/lgsettings.js assets/ui/game.js assets/ui/widget-layout.js \
 assets/ui/system.js assets/ui/history.js assets/ui/ssh.js assets/ui/screentime.js assets/ui/apps.js assets/ui/install.js assets/ui/home.js assets/ui/home-widgets.js assets/ui/home-football.js assets/ui/iptv.js assets/ui/tvchannels.js assets/ui/tabs.js assets/ui/servicemenu.js \

@@ -4,6 +4,7 @@ var msg = require('./say').msg;
 var format = require('./home-widget-format');
 var forecast = require('./home-weather');
 var football = require('./home-football');
+var calendar = require('./home-calendar');
 var store = require('./home-widget-store');
 var templates = require('./home-widget-template');
 var text = format.text;
@@ -31,7 +32,15 @@ function migrateFootballId(raw) {
 function normalise(raw) {
   raw = raw && typeof raw === 'object' ? raw : {};
   raw = migrateFootballId(raw);
-  var weather = raw.weather || {}, added = [], ids = ['clock', 'weather', 'football'];
+  if (Array.isArray(raw.custom) && raw.custom.some(function (item) { return item && item.id === 'calendar'; })) {
+    raw = JSON.parse(JSON.stringify(raw));
+    var id = 'calendar-custom', suffix = 1;
+    while (raw.custom.some(function (item) { return item && item.id === id; })) id = 'calendar-custom-' + (++suffix);
+    raw.custom.forEach(function (item) { if (item && item.id === 'calendar') item.id = id; });
+    if (Array.isArray(raw.order)) raw.order = raw.order.map(function (item) { return item === 'calendar' ? id : item; });
+    if (raw.positions) { raw.positions[id] = raw.positions.calendar; delete raw.positions.calendar; }
+  }
+  var weather = raw.weather || {}, added = [], ids = ['clock', 'weather', 'football', 'calendar'];
   if (Array.isArray(raw.custom)) raw.custom.slice(0, 8).forEach(function (item) {
     var w = custom(item);
     if (w && ids.indexOf(w.id) === -1) { added.push(w); ids.push(w.id); }
@@ -51,12 +60,13 @@ function normalise(raw) {
     weather: { enabled: weather.enabled === true, location: location(weather.location),
     units: weather.units === 'fahrenheit' ? 'fahrenheit' : 'celsius',
     windUnits: ['kmh', 'mph', 'ms', 'kn'].indexOf(weather.windUnits) !== -1 ? weather.windUnits : 'kmh' },
-    football: football.normalise(raw.football), custom: added };
+    football: football.normalise(raw.football), calendar: calendar.normalise(raw.calendar), custom: added };
 }
 
 function count(widgets, showClock) {
   return (showClock !== false ? 1 : 0) + (widgets.weather.enabled ? 1 : 0) +
     (widgets.football.enabled ? 1 : 0) +
+    (widgets.calendar && widgets.calendar.enabled ? 1 : 0) +
     widgets.custom.filter(function (w) { return w.enabled; }).length;
 }
 
@@ -87,6 +97,7 @@ function locations(query, cb) {
 module.exports = {
   store: store,
   football: football,
+  calendar: calendar,
   forDisplay: function (settings) {
     var view = JSON.parse(JSON.stringify(settings));
     view.custom.forEach(function (w) { if (w.version === 3) w.resolved = templates.display(w); });
@@ -99,6 +110,7 @@ module.exports = {
     fetchJson = opts.fetchJson || require('./fetch').getJson;
     forecast.init(opts);
     football.init(opts);
+    calendar.init(opts);
     store.init(opts);
     locationBusy = false;
   }

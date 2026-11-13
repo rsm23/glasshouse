@@ -5,6 +5,7 @@ function homeWidgetLayoutName(id) {
   if (id === 'clock') return t('home.showClock', 'Clock and date');
   if (id === 'weather') return t('home.widgets.weather', 'Weather');
   if (id === 'football') return t('home.football.title', 'Football scores');
+  if (id === 'calendar') return t('home.calendar.title', 'Google Calendar');
   const widget = homeLayout.widgets.custom.find(item => item.id === id);
   return widget ? (widget.resolved || widget).name : '';
 }
@@ -22,6 +23,7 @@ function homeWidgetLayoutReason(reason) {
   if (reason === 'off') return t('home.widgets.needOn', 'Turn this widget on before placing it.');
   if (reason === 'weatherLocation') return t('home.widgets.chooseCity', 'Choose a city before switching weather on.');
   if (reason === 'footballLeagues') return t('home.football.chooseLeagues', 'Choose at least one league or team before switching football scores on.');
+  if (reason === 'calendarSelection') return t('home.calendar.needCalendar', 'Choose at least one calendar before switching Google Calendar on.');
   if (reason === 'tooMany') return t('home.widgets.needLimit', 'Switch widgets off until no more than three are enabled.');
   if (reason === 'capacity') return t('home.widgets.needSpace', 'Free another zone or switch another widget off. Every enabled widget needs a free position.');
   return t('home.widgets.chooseWidget', 'Select a widget to choose its position.');
@@ -189,7 +191,7 @@ function homeWidgetReview(zone) {
   if (['lastWatched', 'picture', 'topPreview', 'previewDetails'].includes(reason)) {
     if (!homeWidgetClose()) return;
   } else {
-    homeWidgetSelect(reason === 'weatherLocation' ? 'weather' : reason === 'footballLeagues' ? 'football' : homeWidgetLayoutSelected || 'clock');
+    homeWidgetSelect(reason === 'weatherLocation' ? 'weather' : reason === 'footballLeagues' ? 'football' : reason === 'calendarSelection' ? 'calendar' : homeWidgetLayoutSelected || 'clock');
   }
   let control = q(controls[reason]);
   if (reason === 'off') control = Array.from(q('home-widget-editors').querySelectorAll(`[data-widget-toggle="${homeWidgetLayoutSelected}"]`)).find(button => button.getClientRects().length);

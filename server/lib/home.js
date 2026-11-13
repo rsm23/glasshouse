@@ -722,6 +722,8 @@ function setLayout(body, cb) {
     error: msg('srv.widgets.location', 'Choose a city before switching weather on.') });
   if (next.widgets.football.enabled && !next.widgets.football.leagues.length && !next.widgets.football.teams.length) return cb({ ok: false,
     error: msg('srv.football.selection', 'Choose at least one league or team before switching football scores on.') });
+  if (next.widgets.calendar.enabled && !next.widgets.calendar.calendars.length) return cb({ ok: false,
+    error: msg('srv.calendar.selection', 'Choose at least one calendar before switching Google Calendar on.') });
   // A moved or emptied Internet TV row reorders, or removes from, its channels.
   if (iptvModule && body.order && isArray(body.order.iptv)) iptvModule.setOrder(stringList(body.order.iptv, 100));
   if (body.reset === true) {
@@ -2784,7 +2786,7 @@ function init(opts) {
   recent.init(stateDir, opts.now);
   recentApps.init({ luna: lunaFn, excluded: function () { return readConfig().excludedRecents; } });
   recommended.init({ luna: lunaFn });
-  widgets.init();
+  widgets.init({ stateDir: stateDir });
   search.init({ luna: lunaFn, Subscription: opts.Subscription, apps: launchPoints,
     opened: function (id) { noteOpened('app', id); }, enabled: function () { return readConfig().search; },
     blockedBy: opts.blockedBy, appInfoLaunch: isStandalone });

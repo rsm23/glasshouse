@@ -72,8 +72,8 @@
     }
     var minimum = Math.min.apply(Math, valid), maximum = Math.max.apply(Math, valid);
     top.appendChild(node('span', 'wk-range', value(minimum, options.precision, suffix) + ' · ' + value(maximum, options.precision, suffix)));
-    var small = options.compact, width = small ? 320 : 800, height = small ? 34 : 166;
-    var left = small ? 2 : 52, right = width - 8, base = small ? 32 : 132, upper = 8;
+    var small = options.compact, width = small ? 320 : 800, height = small ? options.height || 34 : 166;
+    var left = small ? 2 : 52, right = width - 8, base = small ? height - 2 : 132, upper = 8;
     var low = options.style === 'bar' ? Math.min(0, minimum) : minimum;
     var high = options.style === 'bar' ? Math.max(0, maximum) : maximum;
     var span = high - low || 1;
@@ -116,11 +116,11 @@
     box.appendChild(svg);
     return box;
   }
-  function component(c, data, compact) {
+  function component(c, data, compact, chartHeight) {
     var box = node('div', 'wk-component wk-' + c.type);
     if (c.type === 'text') { box.textContent = c.text; return box; }
     if (c.type === 'chart') return chart(field(data, c.field), field(data, c.labels), {
-      label: c.label, unit: unit(c.unit, data), precision: c.precision, style: c.style, compact: compact });
+      label: c.label, unit: unit(c.unit, data), precision: c.precision, style: c.style, compact: compact, height: chartHeight });
     if (c.icon) box.appendChild(icon(c.icon, data));
     if (c.type === 'icon') { box.appendChild(node('span', '', c.label)); return box; }
     var words = node('div', 'wk-data-text');
@@ -129,9 +129,9 @@
     box.appendChild(words);
     return box;
   }
-  function render(host, components, data, compact) {
+  function render(host, components, data, compact, chartHeight) {
     host.innerHTML = '';
-    (components || []).forEach(function (c) { host.appendChild(component(c, data, compact)); });
+    (components || []).forEach(function (c) { host.appendChild(component(c, data, compact, chartHeight)); });
   }
   /** @type {any} */ (window).WidgetKit = { node: node, icon: icon, chart: chart, render: render, field: field, value: value };
 })();

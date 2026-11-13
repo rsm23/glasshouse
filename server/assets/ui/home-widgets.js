@@ -57,7 +57,7 @@ function renderHomeWidgets() {
       <button type="button" class="pill home-widget-mobile-toggle ${WidgetLayout.enabled(homeLayout, id) ? 'good' : 'idle'}" ${off} data-widget-toggle="${id}" aria-pressed="${WidgetLayout.enabled(homeLayout, id)}" aria-label="${esc(name)}" onclick="homeWidgetToggle('${id}')">${esc(WidgetLayout.enabled(homeLayout, id) ? t('common.on', 'On') : t('common.off', 'Off'))}</button>
       <button type="button" class="pill idle" ${busy || i === 0 ? 'disabled' : ''} onclick="homeWidgetMove('${id}', -1)">${esc(t('home.widgets.left', 'Move left'))}</button>
       <button type="button" class="pill idle" ${busy || i === settings.order.length - 1 ? 'disabled' : ''} onclick="homeWidgetMove('${id}', 1)">${esc(t('home.widgets.right', 'Move right'))}</button>
-      ${id !== 'clock' && id !== 'weather' && id !== 'football' ? `<button type="button" class="pill idle" onclick="homeWidgetExport('${id}')">${esc(t('home.store.export', 'Export widget'))}</button><button type="button" class="pill bad" ${off} onclick="homeWidgetRemove('${id}')">${esc(t('home.ch.remove', 'Remove'))}</button>` : ''}
+      ${id !== 'clock' && id !== 'weather' && id !== 'football' && id !== 'calendar' ? `<button type="button" class="pill idle" onclick="homeWidgetExport('${id}')">${esc(t('home.store.export', 'Export widget'))}</button><button type="button" class="pill bad" ${off} onclick="homeWidgetRemove('${id}')">${esc(t('home.ch.remove', 'Remove'))}</button>` : ''}
     </div>
   </div>${homeWidgetPositionFields(id, settings.positions && settings.positions[id] || 'auto', off, name)}${homeWidgetEditorFields(id, settings, off)}`;
   q('home-widget-import').disabled = busy;
@@ -69,6 +69,7 @@ function homeWidgetEditorFields(id, settings, off) {
   if (id === 'clock') return homeWidgetClockFields(settings.clock, off);
   if (id === 'weather') return homeWidgetWeatherFields(settings.weather, off);
   if (id === 'football') return homeFootballFields(settings.football, off);
+  if (id === 'calendar') return homeCalendarFields(settings.calendar, off);
   const widget = settings.custom.find(item => item.id === id);
   return widget.version === 3 ? homeWidgetStoreFields(widget, off) : widget.version === 2
     ? homeWidgetComponentFields(widget, off) : homeWidgetTextFields(widget, off);
@@ -163,7 +164,7 @@ function homeWidgetToggle(id) {
   if (!homeWritable()) return;
   if (id === 'clock') return homeSaveLayout({ showClock: homeLayout.showClock === false });
   const widgets = homeWidgetSettings();
-  const widget = id === 'weather' ? widgets.weather : id === 'football' ? widgets.football : widgets.custom.find(w => w.id === id);
+  const widget = id === 'weather' ? widgets.weather : id === 'football' ? widgets.football : id === 'calendar' ? widgets.calendar : widgets.custom.find(w => w.id === id);
   widget.enabled = !widget.enabled;
   homeSaveLayout({ widgets });
 }

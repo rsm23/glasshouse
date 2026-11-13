@@ -1,7 +1,11 @@
 # Home widgets
 
-Widgets occupy fixed 360 × 200 spaces above Glasshouse Home's app and input
-rows. Clock and date starts on; Weather, Football scores and imported widgets start off.
+Widgets occupy 360 × 200 spaces above Glasshouse Home's app and input
+rows. With **Rows along the bottom**, data widgets grow into the free space above
+the rows in both views. Weather charts grow and Football scores shows more
+matches at once, with its height limited to the available results. The clock
+and text widgets stay compact. Data widgets shrink as rows move up, keeping the rows clear.
+Clock and date starts on; Weather, Football scores and imported widgets start off.
 Open the web dashboard, choose **Home > Home customisation > Top widgets >
 Manage widgets**. The Home page shows only the current placement summary.
 LG Home, Glasshouse Minimal and custom launchers have their own layouts.
@@ -106,8 +110,9 @@ layout is kept and a message explains why.
 ## Clock and date
 
 Choose **Follow the TV**, **12-hour clock** or **24-hour clock**. **Show date**
-is on by default. These choices affect this widget only. The TV app retains
-the clock visibility switch; the other controls are on the web dashboard.
+is on by default. These choices also apply to the date and time in Weather.
+The TV app retains the clock visibility switch; the other controls are on the
+web dashboard.
 
 The clock uses the TV's time and Home's display language. It has no separate
 city or time zone. Correct a wrong time on the TV; see [network time](../ntp.md).
@@ -118,12 +123,19 @@ city or time zone. Correct a wrong time on the TV; see [network time](../ntp.md)
 Assistant. Its data and visibility are independent of this widget. With fixed
 widget positions, that badge fits beside the left slot.
 
-The compact widget shows a condition icon, current temperature and condition,
-and today's temperature and wind graphs. Select it with **OK** to open larger
+The compact widget shows the TV's date and time, a condition icon, current
+temperature and condition, and today's temperature and wind graphs. Select it
+with **OK** to open larger
 graphs and a **10-day forecast**, including today. Each day shows its condition,
 high and low temperatures, maximum wind speed and rain probability. Forecast
 days follow the selected city's local date. A provider response with fewer
 days shows the available days.
+
+Turn off **Clock and date** to free its slot for another widget; Weather keeps
+showing the time. Its clock uses the TV's time and Home's display language,
+independently of the forecast city's time zone, and remains visible when
+weather data is unavailable. **Time format** and **Show date** under **Clock
+and date** apply even when that widget is off.
 
 ![Expanded weather, browser preview with sample data](../screenshots/home-widgets-forecast-preview.png)
 
@@ -225,6 +237,63 @@ coverage, delays and availability may change. League and team lists are cached
 in memory for six hours, scores for one minute and failed reads for 30 seconds.
 Match data is not saved in backups. Only league and team selections are saved.
 All matches are credited to [ESPN](https://www.espn.com/soccer/scoreboard).
+
+## Google Calendar
+
+**Google Calendar** starts off. It shows the next two events from up to eight
+selected calendars. **OK** opens up to 20 events within the next 30 days, with
+calendar names and locations. Google expands recurring events; cancelled events
+and declined invitations are excluded. Times follow the TV's time zone;
+all-day dates remain dates. A failed calendar is labelled unavailable.
+
+### Connect an account
+
+1. In [Google Cloud](https://console.cloud.google.com/apis/credentials), enable
+   the Google Calendar API, configure the consent screen and add the account as
+   a test user if the app is in Testing. Create a **Desktop app** OAuth client
+   and download its JSON credential file.
+2. On the computer used for sign-in, run
+   `ssh -L 18080:127.0.0.1:8080 root@TV_ADDRESS`. Replace the TV address and
+   use its dashboard port instead of 8080 if different. Keep the tunnel open
+   for sign-in, then open [the local dashboard](http://127.0.0.1:18080).
+3. Open **Home > Top widgets > Manage widgets > Google Calendar**, choose the
+   credential file and **Sign in with Google**. Allow pop-ups, approve read-only
+   calendar access in Google's window, then return to the original dashboard.
+4. Select calendars and switch the widget on. **Refresh calendars** reloads
+   the calendar list. Removing the last selection switches the widget off.
+
+The tunnel carries Google's loopback callback to the TV; opening the dashboard
+at the TV's network address cannot receive it. This uses
+[Google's desktop OAuth flow](https://developers.google.com/identity/protocols/oauth2/native-app)
+with one-use state and PKCE. Google's TV device flow does not support Calendar
+scopes. Google's verification and account policies apply; an external OAuth
+app in Testing normally requires sign-in again after seven days
+([Google's token policy](https://developers.google.com/identity/protocols/oauth2#expiration)).
+To remove that Testing-only limit, complete the app's Branding with public
+homepage, privacy policy and terms links, then choose **Audience > Publish app**.
+Sign in again afterward to obtain a production refresh token. Publishing does
+not complete Google's separate app verification.
+
+![Calendar settings, browser preview with synthetic calendars](../screenshots/home-calendar-settings-preview.png)
+
+### Updates and privacy
+
+Access uses separate read-only permissions for the calendar list and calendar
+events. Requests originate on the TV, exposing its public IP and
+selected calendar identifiers to Google. Events refresh after five minutes
+while Home is visible; polling stops while hidden. Slow requests show loading
+progress. Events stay in memory; failed reads do not retain old events as current.
+
+Credentials and the refresh token stay in `/var/lib/tvweb/google-calendar.json`,
+readable only by root, outside settings backups and widget exports. Calendar
+selections and names are included in Home's backup; a restored TV needs its
+own Google sign-in. Anyone viewing Home can see event titles, times and locations.
+
+**Disconnect Google Calendar** removes local credentials, requests revocation
+from Google, clears selections and switches the widget off. If Google cannot
+confirm revocation, remove Glasshouse access in Google Account settings.
+
+![Upcoming events, browser preview with synthetic events](../screenshots/home-calendar-preview.png)
 
 ## Browse the widget store
 

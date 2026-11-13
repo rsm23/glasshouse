@@ -473,7 +473,7 @@ Opens the Home screen when the TV is switched on, rather than staying on the las
 The **Layout** section configures the on-screen placement of rows and status elements:
 
 * **Clock and date:** On by default and configured under **Top widgets** on the web dashboard. The TV app also has its visibility switch. Switched off, another widget can use its slot; with no widgets on, the top strip keeps one empty slot so rows do not jump.
-* **Rows along the bottom:** Places the rows along the bottom of the screen (as on LG's launcher) rather than in the middle. The row in focus sits at the bottom and subsequent rows wait below the screen: moving down scrolls the rows up by one. Off by default.
+* **Rows along the bottom:** Places the rows along the bottom of the screen (as on LG's launcher) rather than in the middle. The row in focus sits at the bottom and subsequent rows wait below the screen: moving down scrolls the rows up by one. Widgets use the free height above the rows and shrink as rows move up. Off by default.
 
     ![Glasshouse Home with the clock off and the rows along the bottom](../screenshots/home-bottom.jpg)
 

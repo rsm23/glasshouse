@@ -73,6 +73,7 @@ function homeWidgetSelect(id) {
   homeWidgetMobileDetail = true;
   homeWidgetShowTab('widgets');
   q('home-widget-editor-title').focus();
+  if (id === 'calendar') homeCalendarLoad();
 }
 
 function homeWidgetBack() {
@@ -83,6 +84,7 @@ function homeWidgetBack() {
 
 function homeWidgetSummary(id) {
   const settings = homeLayout.widgets;
+  if (id === 'calendar') return settings.calendar.calendars.map(item => item.name).join(', ') || t('home.calendar.choose', 'Calendars to display');
   if (id === 'weather') return settings.weather.location
     ? settings.weather.location.name + ' · ' + (settings.weather.units === 'fahrenheit' ? '°F' : '°C')
     : t('home.widgets.chooseCity', 'Choose a city before switching weather on.');

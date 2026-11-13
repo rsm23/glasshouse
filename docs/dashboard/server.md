@@ -40,6 +40,8 @@ A remote key or Quick Access key set to an app the TV doesn't have is named as n
 Home's widget definitions, store snapshots, private settings and positions are
 included. Restore accepts up to 1 MB of JSON, including layouts with eight saved
 widgets. Display definitions and computed placement are rebuilt after restoration.
+Google Calendar selections and names are included; its OAuth credentials and
+refresh token are excluded. A restored TV must connect its own Google account.
 
 **Daily backup** saves the same backup on the TV once a day, in `/var/lib/tvweb/backups`, and keeps the last 7. It is off by default. Switched on, it saves that day's at once, then one each day the TV is on, as the server checks hourly. Each one kept is listed by its date with **Download** and **Restore**. Switching it off keeps those saved.
 

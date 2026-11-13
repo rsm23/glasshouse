@@ -8,8 +8,13 @@ appearance.
 
 Home keeps the existing text and accent colours, including saved custom choices.
 Shaded translucent surfaces and highlights identify focus. TV text keeps the
-bundled Manrope font for stable metrics and offline use. Existing 360 × 200
-widget slots and both Home layouts remain the layout contract. Reduced-motion
+bundled Manrope font for stable metrics and offline use. Widget slots stay
+360 pixels wide, with a compact height of 200 pixels. With bottom rows they
+give data widgets the free height above the first visible row in both Home layouts.
+The clock and text stay compact; football height follows the result count.
+Widgets shrink before rows scroll up and grow after rows finish scrolling down
+to keep focus outlines clear. Football scrolling follows the available height.
+Reduced-motion
 and reduced-transparency preferences have CSS fallbacks. Older engines render
 shaded materials without blur. The design dials are Energy 2, Rhythm 2, Motion 1:
 a quiet screen read from the sofa, with focus carrying the emphasis.

@@ -13,13 +13,40 @@ deployment and CI hooks. `test-fork-ui.py` mutates isolated fixture files and
 merges temporary Git repositories to check that regressions are refused before
 a commit. Both run in `check-all.sh` and CI. See [fork merges](FORK-UI.md).
 
-The Home browser group checks unchanged widget geometry, forecast-sheet bounds
+The Home browser group checks compact widget geometry, forecast-sheet bounds
 and focus, reduced motion and a Home fallback with `@supports` rules removed.
 It uses synthetic weather and football. The appearance guard also rejects a
 Liquid Glass stylesheet on either the web dashboard or TV settings dashboard.
 Physical-TV rendering and remote behavior still need a real-TV check.
 
 ## On every pull request
+
+`test-home-calendar.js` uses synthetic Google replies and an injected clock to
+check OAuth state, PKCE, callback expiry/replay, grant scope, private token
+storage, refresh/disconnect races, calendar pagination, event ordering, recurring
+instance requests, all-day dates, declined/cancelled events and cache invalidation.
+`test-calendar-routes.js` verifies dashboard authentication, control permissions,
+CSRF guards and the callback's query-free redirect and privacy headers.
+`test-google-calendar-http.js` checks fixed Google hosts, verified TLS and that
+credentials use curl's stdin rather than process arguments. Neither contacts Google.
+The OAuth test rejects consent that grants only the calendar-list permission or
+only the events permission, without saving a partial connection.
+`scripts/check-calendar.js`, in the Home browser group, checks credential import,
+sign-in, calendar selection, toggling/disconnect, phone layouts in both themes,
+literal event titles, all-day display, remote expansion/focus, and empty/error
+states. Its screenshots use synthetic calendars and events. Live Google consent
+and physical-TV rendering require separate validation.
+
+On 13 November 2026, a B4 running webOS 10.3.2 completed real read-only Google
+OAuth, listed the primary calendar and returned two upcoming events. Calendar
+was enabled in the left slot, with the separate clock off and Weather retaining
+its clock. The TV's credential file was verified as root-owned mode 0600.
+A server restart retained authorization and returned the same two events.
+The Google OAuth app was then published to Production; renewed authorization
+changed the TV's saved credential and still returned two upcoming events.
+Google app verification remains incomplete.
+The browser check took 1.4 seconds with synthetic data. Physical-TV rendering
+and physical-remote navigation were not observed.
 
 `test-home-widgets.js` checks migration, saved settings, enabled-widget limits,
 weather opt-in, shared requests and cache behaviour with injected replies and
@@ -40,6 +67,8 @@ charts, remote expansion/closing, three-position layout, and pausing/resuming
 polling while covered. Widget ids such as `message`, `panel` and `panel-title`
 cannot overwrite focus help or dialog controls. City and weather replies are fixtures. Physical-TV
 rendering and remote testing remain separate requirements.
+The Home appearance check also verifies bottom-row widget height, chart and
+score space, remote navigation and the return to compact widgets in both views.
 
 `test-home-football.js` checks live/half-time filtering, home and away team
 selection, zero scores, duplicate matches, midnight coverage, shared requests,
@@ -72,8 +101,10 @@ return to the normal refresh interval.
 The ES5 check includes `assets/home-football-view.js` alongside the other Home
 widget scripts.
 
-The widget check also toggles Home Assistant's separate weather badge and
-checks that it does not overlap three fixed-position widgets in either Home
+The widget check verifies Weather's clock with the separate clock off, shared
+12/24-hour and date settings, midnight rollover without extra weather reads,
+and unavailable weather. It also toggles Home Assistant's separate weather
+badge and checks that it does not overlap three fixed-position widgets in either Home
 view. Forecast-widget and Home Assistant weather replies use separate fixtures.
 
 `test-widget-layout.js` checks the shared drop planner, swapping, ordering,

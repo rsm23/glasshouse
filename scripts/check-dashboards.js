@@ -861,7 +861,7 @@ async function visitHomeWidgets(browser, base, problems) {
   let layout = { rows: ['app', 'dev', 'ch'], order: { app: [], dev: [], ch: [] },
     hidden: { app: [], dev: [], ch: [] }, channels: [], hintSeen: true, searchHintSeen: true,
     showClock: true, weather: 'ha', widgets: require('../server/lib/home-widgets').normalise(null) };
-  let version = 1, weatherReads = 0, covered = false, lastWeather = null, pushedWeather = null;
+  let version = 1, weatherReads = 0, covered = false, lastWeather = null, pushedWeather = null, weatherUnavailable = false;
   const reply = (route, body) => route.fulfill({ json: body });
   await page.route('**/api/home**', route => {
     const pathname = new URL(route.request().url()).pathname;
@@ -882,7 +882,7 @@ async function visitHomeWidgets(browser, base, problems) {
     if (pathname === '/api/home/widgets/weather') {
       weatherReads++;
       lastWeather = route;
-      return reply(route, require('../test/mocks/widget-forecast')());
+      return reply(route, weatherUnavailable ? { ok: true, available: false } : require('../test/mocks/widget-forecast')());
     }
     return reply(route, { ok: true, build: 'one', layoutVersion: String(version), covered, weather: pushedWeather });
   });
@@ -992,6 +992,13 @@ async function visitHomeWidgets(browser, base, problems) {
       problems.push('Home widgets: settings did not reach Home: ' + JSON.stringify(actual));
     }
     if (await page.locator('#widget-weather .wk-chart svg').count() !== 2) problems.push('Home widgets: today’s weather graphs are missing');
+    const weatherClock = await page.locator('#widget-weather').evaluate(el => ({
+      time: el.querySelector('.widget-weather-time').textContent,
+      meridiem: el.querySelector('.widget-weather-meridiem').textContent,
+      dateHidden: el.querySelector('.widget-weather-date').hidden
+    }));
+    if (weatherClock.time !== await page.locator('#hm').textContent() || weatherClock.meridiem !== actual.meridiem || !weatherClock.dateHidden)
+      problems.push('Home widgets: Weather did not follow the 12-hour clock and hidden-date settings');
     await page.keyboard.press('ArrowUp');
     await page.keyboard.press('Enter');
     await page.locator('#widget--panel').waitFor({ state: 'visible' });
@@ -1012,6 +1019,27 @@ async function visitHomeWidgets(browser, base, problems) {
     await waitUntil(page, () => Promise.resolve(weatherReads > initialReads));
     if (weatherReads === initialReads) problems.push('Home widgets: weather did not refresh on return');
     layout.showClock = false;
+    layout.widgets.clock = { format: '24', date: true };
+    layout.widgets.custom[0].enabled = true;
+    version++;
+    await page.clock.setSystemTime(new Date(2026, 10, 13, 23, 59, 30));
+    await page.clock.fastForward(15000);
+    await page.waitForFunction(() => document.getElementById('when').style.display === 'none' &&
+      document.querySelector('#widget-weather .widget-weather-time').textContent === '23:59');
+    await page.locator('#widget-message').waitFor();
+    const beforeMidnight = await page.locator('.widget-weather-date').textContent();
+    const clockReads = weatherReads;
+    await page.clock.fastForward(60000);
+    await page.waitForFunction(() => document.querySelector('.widget-weather-time').textContent === '00:00');
+    if (await page.locator('.widget-weather-date').textContent() === beforeMidnight ||
+        await page.locator('.widget-weather-meridiem').textContent() !== '' ||
+        weatherReads !== clockReads) problems.push('Home widgets: Weather clock did not cross midnight independently of weather polling');
+    weatherUnavailable = true;
+    await page.reload();
+    await page.locator('#widget-weather .widget-detail').filter({ hasText: 'Weather unavailable' }).waitFor();
+    if (!await page.locator('.widget-weather-time').textContent() || !await page.locator('.widget-weather-date').isVisible())
+      problems.push('Home widgets: unavailable weather hid its clock or date');
+    weatherUnavailable = false;
     layout.widgets.weather.enabled = false;
     layout.widgets.custom[0].enabled = true;
     version++;
@@ -3983,9 +4011,9 @@ async function visitHomeLiquidGlass(browser, base, problems) {
     const reply = body => route.fulfill({ json: body });
     if (pathname === '/api/home') return reply({ ok: true, supported: { ok: true }, enabled: true, active: true, writable: true, layout });
     if (pathname === '/api/home/catalogue') return reply({ ok: true, layout, layoutVersion: 'glass',
-      apps: [], devices: [], channels: [], order: { app: ['lg-home'], dev: [], ch: [] }, sources: {} });
+      apps: [], devices: [{ id: 'player', name: 'Player', port: 1 }], channels: [], order: { app: ['lg-home'], dev: ['player'], ch: [] }, sources: {} });
     if (pathname === '/api/home/widgets/weather') return reply(require('../test/mocks/widget-forecast')());
-    if (pathname === '/api/home/widgets/football') return reply({ ok: true, available: true, matches: [{ id: 'example', date: '2026-11-13T18:00:00Z', league: 'Example match', home: { name: 'Home team', score: 2 }, away: { name: 'Away team', score: 1 } }], nextMatches: [], missingTeams: [], leagues: [], mode: 'live' });
+    if (pathname === '/api/home/widgets/football') return reply({ ok: true, available: true, matches: Array.from({ length: 10 }, (_, i) => ({ id: 'example-' + i, date: '2026-11-13T18:00:00Z', league: 'Example match', home: { name: 'Home team ' + (i + 1), score: 2 }, away: { name: 'Away team ' + (i + 1), score: 1 } })), nextMatches: [], missingTeams: [], leagues: [], mode: 'live' });
     return reply({ ok: true, layoutVersion: 'glass', build: 'glass', covered: false });
   });
   try {
@@ -4015,6 +4043,48 @@ async function visitHomeLiquidGlass(browser, base, problems) {
     await page.locator('#when').click();
     const focus = await page.locator('#when').evaluate(el => getComputedStyle(el).outlineWidth);
     if (focus !== '3px') problems.push('Liquid Glass: fallback lost the remote focus ring');
+    await page.keyboard.press('ArrowDown');
+    async function widgetSpace(tall) {
+      await page.waitForFunction(expected => {
+        const widget = document.getElementById('widget-weather');
+        return !document.body.classList.contains('widget-focused') && (widget.offsetHeight > 260) === expected;
+      }, tall);
+      const geometry = await page.evaluate(() => {
+        const widgets = [...document.querySelectorAll('#widgets > .home-widget')].filter(el => el.offsetHeight);
+        const firstRow = [...document.querySelectorAll('#rows .row')].find(el => el.offsetHeight);
+        const weather = document.getElementById('widget-weather');
+        return { heights: widgets.map(el => el.offsetHeight), bottom: Math.max(...widgets.map(el => el.getBoundingClientRect().bottom)),
+          row: firstRow.getBoundingClientRect().top,
+          chart: weather.querySelector('.wk-chart > svg').getBoundingClientRect().height,
+          chartDrawing: Number(weather.querySelector('.wk-chart > svg').getAttribute('viewBox').split(' ')[3]),
+          clock: document.getElementById('when').offsetHeight,
+          scores: document.querySelector('#widget-football .widget-body').clientHeight };
+      });
+      if (geometry.heights.some(height => tall ? height < 400 : height !== 200) || geometry.bottom + 24 > geometry.row ||
+          geometry.clock !== 200 || tall && (geometry.chart < 100 || geometry.chartDrawing < 100 || geometry.scores < 300)) {
+        problems.push('Bottom-row widget space: ' + JSON.stringify({ tall, geometry }));
+      }
+      return geometry.heights[0];
+    }
+    for (const [view, fixed] of [['default', false], ['alternative', false], ['default', true], ['alternative', true]]) {
+      layout.rowsBottom = true; layout.view = view;
+      layout.widgetPlacement = fixed ? require('../server/lib/home-widgets').placement(layout) : null;
+      await page.reload();
+      const expandedHeight = await widgetSpace(true);
+      await page.keyboard.press('ArrowDown');
+      await page.waitForFunction(() => document.querySelector('.row.active').getAttribute('data-key') === 'dev');
+      await page.waitForFunction(height => document.getElementById('widget-weather').offsetHeight < height, expandedHeight);
+      const smallerHeight = await widgetSpace(true);
+      if (smallerHeight >= expandedHeight) problems.push('Bottom-row widgets did not shrink above the input row');
+      await page.keyboard.press('ArrowUp');
+      await widgetSpace(true);
+      await page.keyboard.press('ArrowUp');
+      await page.waitForFunction(() => document.body.classList.contains('widget-focused'));
+      await page.keyboard.press('ArrowDown');
+      layout.rowsBottom = false;
+      await page.reload();
+      await widgetSpace(false);
+    }
   } finally { await page.close(); }
 }
 
@@ -4027,7 +4097,7 @@ function groups(web, tv) {
     { job: 'home', tabs: [], visits: [visitHomeArrangement, visitHomeVisibility, visitHomeColours, visitHomeInputsEditor, visitHomeEditor,
       visitHomeRecentsHidden, visitHomeUploads, visitHomeShuffle, visitHomeLauncher, visitHomeReadiness, visitAudioOverride, visitHomeRecents, visitHomeGuide,
       visitHomeFadeAndInputs] },
-    { job: 'home', tabs: [], visits: [visitHomeInternetTv, visitIptvChannels, visitHomeWidgets, visitWidgetLayout, visitWidgetStore, visitHomeFootball, visitHomeLiquidGlass] },
+    { job: 'home', tabs: [], visits: [visitHomeInternetTv, visitIptvChannels, visitHomeWidgets, visitWidgetLayout, visitWidgetStore, visitHomeFootball, visitHomeLiquidGlass, require('./check-calendar')] },
     /*
      * Scrolling and motion read the row's place frame by frame, and missed
      * frames with the other groups sharing CI's four cores: 3 of 15 runs

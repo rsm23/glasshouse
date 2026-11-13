@@ -41,7 +41,7 @@
     return Math.max(0, -(+parts[parts.length === 16 ? 13 : 5] || 0));
   }
   function render(host, data, compact) {
-    var signature = JSON.stringify([data && data.available, data && data.partial, data && data.loading, data && data.mode, data && data.matches, data && data.nextMatches, data && data.missingTeams, compact]);
+    var signature = JSON.stringify([data && data.available, data && data.partial, data && data.loading, data && data.mode, data && data.matches, data && data.nextMatches, data && data.missingTeams, compact, compact && host.clientHeight]);
     if (host.footballSignature === signature) return;
     host.footballSignature = signature;
     var previousOffset = offset(host);

@@ -1,8 +1,20 @@
 # What the dashboard changes on the TV
 
+The optional Google Calendar Home widget stores its OAuth client and refresh
+token in `/var/lib/tvweb/google-calendar.json` with mode 0600, outside settings
+backups. It reads selected calendars directly from Google while Home is visible;
+event data stays in memory. Disconnect removes local credentials and requests
+Google token revocation. New connections request only read access to the calendar
+list and events. It installs no additional service or boot hook.
+
 In this fork, Glasshouse Home loads an additional Liquid Glass-inspired
 stylesheet. It changes Home tiles, widget surfaces, detail sheets and focus
 indicators. Older browser engines use shaded materials without backdrop blur.
+With rows along the bottom, widgets use the free height above the rows for
+larger charts and more scores, shrinking when rows move up.
+
+The Weather widget includes the TV's date and time, using the clock widget's
+format settings even when that widget is off, freeing a top slot.
 
 
 ## Audio capabilities and DTS forwarding

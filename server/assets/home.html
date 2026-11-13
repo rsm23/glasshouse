@@ -88,6 +88,12 @@ body.widget-focused .tile.focus{outline-color:transparent}
 .widget-weather-summary>svg{width:34px;height:34px;margin-right:10px;-webkit-flex:0 0 auto;flex:0 0 auto}
 .widget-rich .widget-value{font-size:40px;line-height:44px}
 .widget-weather-summary .widget-detail{font-size:17px;margin-left:12px;min-width:0;overflow:hidden;text-overflow:ellipsis}
+#widget-weather{padding-top:8px;padding-bottom:8px}
+.widget-weather-clock{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;height:28px;margin-bottom:2px}
+.widget-weather-hours{font-size:28px;line-height:28px;white-space:nowrap;font-variant-numeric:tabular-nums;-webkit-flex:0 0 auto;flex:0 0 auto}
+.widget-weather-meridiem{font-size:14px;margin-left:3px}
+.widget-weather-date{font-size:16px;line-height:20px;margin-left:12px;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#a39d93}
+.widget-weather .widget-weather-summary{height:40px}
 .wk-chart{color:#e9ad55;min-width:0}
 .wk-chart-caption{display:-webkit-flex;display:flex;-webkit-justify-content:space-between;justify-content:space-between;font-size:22px;line-height:1.3;white-space:nowrap;overflow:hidden}
 .wk-range{font-size:.75em;margin-left:12px;color:#a39d93}
@@ -96,6 +102,25 @@ body.widget-focused .tile.focus{outline-color:transparent}
 .widget-rich .wk-chart-caption{font-size:12px;line-height:16px}
 .widget-rich .wk-chart>svg{height:30px}
 .widget-rich .wk-empty{padding:3px 0;font-size:14px;line-height:27px}
+.widget-weather .wk-chart-caption{line-height:14px}
+.widget-weather .wk-chart>svg{height:20px}
+.widget-weather .wk-empty{line-height:28px;padding:3px 0}
+/* Bottom rows leave room for readable charts and more scores above them. */
+#now.widgets-tall #widgets{-webkit-align-items:flex-start;align-items:flex-start}
+.widgets-tall #when,.widgets-tall .home-widget{display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column}
+.widgets-tall #when{-webkit-justify-content:center;justify-content:center}
+.widgets-tall .widget-name,.widgets-tall .widget-status,.widgets-tall .widget-weather-clock{-webkit-flex:0 0 auto;flex:0 0 auto}
+.widgets-tall .widget-body{-webkit-flex:1 1 auto;flex:1 1 auto;min-height:0;overflow:hidden;display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column;-webkit-justify-content:center;justify-content:center}
+.widgets-tall .widget-rich .widget-body{-webkit-justify-content:flex-start;justify-content:flex-start}
+.widgets-tall .widget-football .widget-body{display:block;height:auto}
+.widgets-tall .wk-chart{-webkit-flex:1 1 0;flex:1 1 0;min-height:0;display:-webkit-flex;display:flex;-webkit-flex-direction:column;flex-direction:column}
+.widgets-tall .widget-rich .wk-chart-caption{font-size:18px;line-height:26px;-webkit-flex:0 0 auto;flex:0 0 auto}
+.widgets-tall .widget-rich .wk-chart>svg{height:auto;min-height:0;-webkit-flex:1 1 0;flex:1 1 0}
+.widgets-tall .widget-weather .widget-weather-summary{height:70px;-webkit-flex:0 0 auto;flex:0 0 auto}
+.widgets-tall .widget-weather .widget-weather-hours{font-size:36px}
+.widgets-tall .widget-weather-clock{height:44px}
+.widgets-tall .widget-weather .widget-value{font-size:48px}
+.widgets-tall .widget-weather .widget-detail{font-size:20px}
 .wk-component{display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;min-width:0;margin:3px 0;overflow:hidden}
 .wk-component>svg{width:32px;height:32px;margin-right:12px;-webkit-flex:0 0 auto;flex:0 0 auto}
 .wk-data-text{min-width:0}
@@ -697,6 +722,7 @@ body.no-crossfade #wall .layer{-webkit-transition:none;transition:none}
 body.no-slide #recents,body.no-slide #finder,body.no-slide #folder,body.no-slide #folderGrid,body.no-slide #hits{-webkit-transition:none;transition:none}
 </style>
 <link rel="stylesheet" href="/assets/home-liquid-glass.css">
+<link rel="stylesheet" href="/assets/home-calendar.css">
 </head>
 <body>
 <div id="stage" class="no-search no-clock">
@@ -808,6 +834,7 @@ body.no-slide #recents,body.no-slide #finder,body.no-slide #folder,body.no-slide
 <script src="/assets/widget-kit.js"></script>
 <script src="/assets/home-widget-panel.js"></script>
 <script src="/assets/home-football-view.js"></script>
+<script src="/assets/home-calendar-view.js"></script>
 <script src="/assets/home-widgets-view.js"></script>
 <script src="/assets/devicons.js"></script>
 <script>
@@ -1327,6 +1354,12 @@ body.no-slide #recents,body.no-slide #finder,body.no-slide #folder,body.no-slide
    */
   var rowsScroll = { to: 0, timer: null };
   function rowsAtBottom() { return !!layout && layout.rowsBottom === true; }
+  function sizeWidgets(scrollTop) {
+    var box = $('rows');
+    var height = rowsAtBottom() && box.querySelector('.row:not(.empty):not(.off-row)')
+      ? Math.max(200, box.offsetTop + firstRowTop(box) - scrollTop - $('widgets').offsetTop - 32) : 200;
+    window.GlasshouseWidgets.resize(height);
+  }
   /*
    * Along the bottom the row in focus is always brought to the bottom, its
    * own margin below it, so only the rows before it show above and the ones
@@ -1334,7 +1367,7 @@ body.no-slide #recents,body.no-slide #finder,body.no-slide #folder,body.no-slide
    */
   function keepRowInView(instant) {
     var box = $('rows'), active = box.querySelector('.row.active');
-    if (!active) return;
+    if (!active) { sizeWidgets(box.scrollTop); return; }
     var view = box.clientHeight, y = box.scrollTop;
     var top = active.offsetTop - 6, bottom = active.offsetTop + active.offsetHeight + 6;
     if (rowsAtBottom()) {
@@ -1345,18 +1378,22 @@ body.no-slide #recents,body.no-slide #finder,body.no-slide #folder,body.no-slide
     }
     y = Math.max(0, Math.min(y, box.scrollHeight - view));
     // A scroll already headed there is left to finish.
-    if (y === rowsScroll.to && (rowsScroll.timer || Math.abs(box.scrollTop - y) < 1)) return;
+    if (y === rowsScroll.to && (rowsScroll.timer || Math.abs(box.scrollTop - y) < 1)) {
+      sizeWidgets(Math.max(box.scrollTop, y)); return;
+    }
     rowsScroll.to = y;
     box.className = y > firstRowTop(box) ? 'scrolled' : '';
     clearInterval(rowsScroll.timer);
     rowsScroll.timer = null;
-    if (instant) { box.scrollTop = y; if (liveTile) placeTilePreview(liveTile); return; }
+    if (instant) { box.scrollTop = y; sizeWidgets(y); if (liveTile) placeTilePreview(liveTile); return; }
+    // Shrink before rows move up; grow only once rows have moved down clear.
+    sizeWidgets(Math.max(box.scrollTop, y));
     var from = box.scrollTop, start = Date.now();
     rowsScroll.timer = setInterval(function () {
       var k = Math.min(1, (Date.now() - start) / 200);
       box.scrollTop = from + (y - from) * (1 - Math.pow(1 - k, 3));
       if (liveTile) placeTilePreview(liveTile);
-      if (k >= 1) { clearInterval(rowsScroll.timer); rowsScroll.timer = null; }
+      if (k >= 1) { clearInterval(rowsScroll.timer); rowsScroll.timer = null; sizeWidgets(y); }
     }, 16);
   }
   // Where the first row shown starts: scrolled past it, the top edge fades.
@@ -1664,6 +1701,7 @@ body.no-slide #recents,body.no-slide #finder,body.no-slide #folder,body.no-slide
     $('mer').hidden = !p[1];
     $('date').textContent = dateText(d);
     $('date').style.display = clock && clock.date === false ? 'none' : '';
+    window.GlasshouseWidgets.clock(p[0], p[1], clock && clock.date === false ? '' : $('date').textContent);
     if (guide.open) return renderGuideStrip();
     var kind = '', title = '', via = '', pv = $('preview').className && !inTile() ? tilePreview.target : null;
     if (pv) {

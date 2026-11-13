@@ -72,7 +72,7 @@ The file and normalised definition must fit **16 KB**. Common fields:
 | Field | Rules |
 | :--- | :--- |
 | `version`, `type` | Exactly `2` and `"components"`. |
-| `id` | Required: a lowercase letter followed by up to 39 lowercase letters, digits or hyphens. `clock`, `weather` and `football` are reserved. |
+| `id` | Required: a lowercase letter followed by up to 39 lowercase letters, digits or hyphens. `clock`, `weather`, `football` and `calendar` are reserved. |
 | `name` | Required, up to 40 characters. |
 | `enabled` | Only literal `true` enables a saved definition. Dashboard imports override it to `false`. |
 | `data.source` | Exactly `static`, `weather` or `tv`. |
@@ -355,6 +355,18 @@ these rules before a move. All-Automatic layouts preserve the existing group
 arrangement. Explicit positions take precedence over order.
 
 ## Storage and HTTP integration
+
+The built-in Google Calendar widget is separate from declarative data sources.
+`home-calendar.js` reads expanded event instances through Google's Calendar API;
+`google-calendar-auth.js` owns desktop OAuth state, PKCE, private token storage
+and refresh; `google-calendar-http.js` sends verified HTTPS requests using curl,
+with credentials on stdin. Google account credentials are not part of `home.json`.
+Calendar selection is saved under `widgets.calendar`, included in layout backups.
+The callback uses the root of the dashboard's tunneled `http://127.0.0.1:PORT`
+origin, consumes its one-use state before exchanging the code, then redirects to
+the dashboard without the authorization query. No Google token reaches Home.
+Existing custom widgets named `calendar` migrate to `calendar-custom` with their
+order and position preserved. See [account setup](../dashboard/widgets.md#google-calendar).
 
 Definitions, `positions`, `order`, `clock`, and `weather` live under `widgets`
 in `/var/lib/tvweb/home.json`; `showClock` remains a sibling visibility setting.

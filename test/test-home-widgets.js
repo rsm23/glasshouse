@@ -91,7 +91,7 @@ assert.strictEqual(widgets.custom(settings.custom[0]), null);
 settings = weatherSettings();
 settings.weather.location.latitude = Infinity;
 home.setLayout({ widgets: settings }, function (r) { assert.strictEqual(r.ok, false, 'invalid locations cannot enable weather'); });
-assert.deepEqual(widgets.normalise({ order: ['weather', 'weather', '__proto__', 'clock'] }).order, ['weather', 'clock', 'football']);
+assert.deepEqual(widgets.normalise({ order: ['weather', 'weather', '__proto__', 'clock'] }).order, ['weather', 'clock', 'football', 'calendar']);
 var migrated = widgets.normalise({ order: ['football', 'clock'], positions: { football: 'left' },
   custom: [{ version: 1, type: 'text', id: 'football', name: 'Old football', value: 'Saved note' }] });
 assert.strictEqual(migrated.custom[0].id, 'football-custom', 'an older custom football widget is preserved');
